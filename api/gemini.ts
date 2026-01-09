@@ -15,8 +15,17 @@ export default async function handler(request: Request) {
         });
     }
 
-    // API_KEY is read from Vercel's environment variables on the server-side.
-    const ai = new GoogleGenAI({ apiKey: process.env.AIzaSyClHFFdhf4Sy2ZIEkQwmseIenBCU0YctBE });
+    // API key must come from server-side environment variables (never hardcode keys).
+    // In Vercel, set GEMINI_API_KEY in Project Settings → Environment Variables.
+    const apiKey = (process.env as any)?.GEMINI_API_KEY as string | undefined;
+    if (!apiKey) {
+        return new Response(JSON.stringify({ error: 'Missing GEMINI_API_KEY' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
 
     try {
         const { orders }: { orders: Order[] } = await request.json();

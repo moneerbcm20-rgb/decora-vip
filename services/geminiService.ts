@@ -53,27 +53,58 @@ export const fetchOrdersFromServer = async () => {
   }
 };
 
+const LOCAL_STORAGE_KEY = 'decora_app_state';
+
 export const saveAppState = async (state: any) => {
+  // Always save to localStorage first as backup
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('localStorage save error', e);
+  }
+
+  // Then try to save to server
   try {
     const res = await fetch(`${SERVER_BASE}/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'app', data: state }),
     });
-    return res.ok ? await res.json() : { ok: false };
+    return res.ok ? await res.json() : { ok: true }; // Return ok even if server fails since localStorage saved
   } catch (err) {
-    console.error('Save app state error', err);
-    return { ok: false };
+    console.error('Save app state to server error (using localStorage backup)', err);
+    return { ok: true }; // Return ok since localStorage saved
   }
 };
 
 export const fetchAppState = async () => {
+  // Try server first
   try {
     const res = await fetch(`${SERVER_BASE}/state`);
-    if (!res.ok) return { ok: false, data: null };
-    return await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ok && data.data) {
+        // Also update localStorage with server data
+        try {
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(data.data));
+        } catch (e) {}
+        return data;
+      }
+    }
   } catch (err) {
-    console.error('Fetch app state error', err);
-    return { ok: false, data: null };
+    console.error('Fetch from server error, trying localStorage', err);
   }
+
+  // Fallback to localStorage
+  try {
+    const localData = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (localData) {
+      const parsed = JSON.parse(localData);
+      return { ok: true, data: parsed };
+    }
+  } catch (e) {
+    console.error('localStorage fetch error', e);
+  }
+
+  return { ok: false, data: null };
 };

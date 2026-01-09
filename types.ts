@@ -1,6 +1,4 @@
 
-import React from 'react';
-
 export enum ProductType {
   KITCHEN = 'kitchen',
   DRESSING = 'dressing',
@@ -86,6 +84,17 @@ export interface Invoice {
   items: InvoiceItem[];
 }
 
+export interface PaymentReceipt {
+  id: string;
+  receiptNumber: number;
+  invoiceId: string;
+  customerId: string;
+  amount: number;
+  paymentDate: number;
+  createdAt: number;
+  notes?: string;
+}
+
 export interface AutoBackup {
   id: string;
   timestamp: number;
@@ -93,4 +102,5 @@ export interface AutoBackup {
   orders: Order[];
   expenses?: Expense[];
   invoices?: Invoice[];
+  paymentReceipts?: PaymentReceipt[];
 }

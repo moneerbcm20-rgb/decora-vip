@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Customer, Order, OrderStatus, UserAccount, UserRole, ProductConfig, ProductType, Expense, ExpenseCategory, Invoice, InvoiceStatus } from './types';
+import { Customer, Order, OrderStatus, UserAccount, UserRole, ProductConfig, ProductType, Expense, ExpenseCategory, Invoice, InvoiceStatus, PaymentReceipt } from './types';
 // FIX: Imported EXPENSE_CATEGORY_MAP and INVOICE_STATUS_MAP for global access within the file.
 import { DEFAULT_PRODUCTS_CONFIG, STATUS_MAP, ICON_MAP, EXPENSE_CATEGORY_MAP, INVOICE_STATUS_MAP } from './constants';
 import { getSmartSchedulingAdvice, saveAppState, fetchAppState } from './services/geminiService';
@@ -111,6 +111,8 @@ interface DatabaseViewProps {
   setAutoBackupEnabled: (b: boolean) => void;
   setProductsConfig: (config: Record<string, ProductConfig>) => void;
   addToast: (message: string, type?: Toast['type']) => void;
+  companyLogo: string | null;
+  setCompanyLogo: (logo: string | null) => void;
 }
 
 interface CustomersViewProps {
@@ -162,7 +164,10 @@ const getIcon = (iconKey: string) => {
     return ICON_MAP[iconKey] || Package;
 };
 
-const formatCurrency = (amount: number | undefined) => new Intl.NumberFormat('ar-LY', { style: 'currency', currency: 'LYD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount || 0);
+const formatCurrency = (amount: number | undefined) => {
+    const num = Math.round(amount || 0);
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',') + ' د.ل';
+};
 
 
 const TopNavLink: React.FC<{ active: boolean, onClick: () => void, icon: React.ReactNode, label: string }> = ({ active, onClick, icon, label }) => (
@@ -737,7 +742,7 @@ const ProductsView: React.FC<{ config: Record<string, ProductConfig>, onEdit: (i
   );
 };
 
-const DatabaseView: React.FC<DatabaseViewProps> = ({ customers, orders, expenses, invoices, setCustomers, setOrders, setExpenses, setInvoices, userAccounts, setUserAccounts, fileInputRef, currentUser, openPasswordModal, onAddUser, onToggleUserStatus, onDeleteUser, onChangeUserRole, handleManualExport, backupInterval, setBackupInterval, onSelectBackupPath, isBackupPathSet, autoBackupEnabled, setAutoBackupEnabled, setProductsConfig, addToast }) => {
+const DatabaseView: React.FC<DatabaseViewProps> = ({ customers, orders, expenses, invoices, setCustomers, setOrders, setExpenses, setInvoices, userAccounts, setUserAccounts, fileInputRef, currentUser, openPasswordModal, onAddUser, onToggleUserStatus, onDeleteUser, onChangeUserRole, handleManualExport, backupInterval, setBackupInterval, onSelectBackupPath, isBackupPathSet, autoBackupEnabled, setAutoBackupEnabled, setProductsConfig, addToast, companyLogo, setCompanyLogo }) => {
   const [showDangerZone, setShowDangerZone] = useState(false);
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'user' as UserRole });
@@ -774,6 +779,84 @@ const DatabaseView: React.FC<DatabaseViewProps> = ({ customers, orders, expenses
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
          <div className="lg:col-span-2 space-y-8">
+            {/* Company Logo Upload Section */}
+            <div className="professional-card p-8 bg-white border-2 border-purple-50">
+               <div className="flex items-center gap-4 mb-6">
+                  <div className="w-12 h-12 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center"><Palette size={24}/></div>
+                  <h4 className="text-xl font-black text-slate-900">شعار الشركة</h4>
+               </div>
+               <div className="space-y-4">
+                  <p className="text-sm font-bold text-slate-600">قم برفع شعار الشركة ليظهر في الفواتير والإيصالات</p>
+                  <div className="flex items-center gap-6">
+                     <div className="flex-shrink-0">
+                        {companyLogo ? (
+                           <div className="relative group">
+                              <img 
+                                 src={companyLogo} 
+                                 alt="شعار الشركة" 
+                                 className="w-32 h-32 object-contain rounded-2xl border-4 border-purple-200 shadow-lg"
+                              />
+                              <button
+                                 onClick={() => {
+                                    setCompanyLogo(null);
+                                    addToast("تم إزالة الشعار بنجاح", 'success');
+                                 }}
+                                 className="absolute -top-2 -right-2 w-8 h-8 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-red-600"
+                                 title="إزالة الشعار"
+                              >
+                                 <X size={16} />
+                              </button>
+                           </div>
+                        ) : (
+                           <div className="w-32 h-32 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl border-4 border-purple-300 flex items-center justify-center shadow-lg">
+                              <Palette className="text-purple-400" size={48} />
+                           </div>
+                        )}
+                     </div>
+                     <div className="flex-1">
+                        <label className="bg-purple-600 text-white px-6 py-4 rounded-xl font-black text-sm flex items-center gap-3 cursor-pointer hover:bg-purple-700 transition-all shadow-lg inline-flex">
+                           <UploadCloud size={20}/> {companyLogo ? 'تغيير الشعار' : 'رفع شعار'}
+                           <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden"
+                              onChange={(e) => {
+                                 const file = e.target.files?.[0];
+                                 if (file) {
+                                    // Check file size (max 2MB)
+                                    if (file.size > 2 * 1024 * 1024) {
+                                       addToast("حجم الصورة كبير جداً. الحد الأقصى 2 ميجابايت", 'error');
+                                       return;
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = (event) => {
+                                       setCompanyLogo(event.target?.result as string);
+                                       addToast("تم رفع الشعار بنجاح", 'success');
+                                    };
+                                    reader.onerror = () => {
+                                       addToast("حدث خطأ أثناء قراءة الصورة", 'error');
+                                    };
+                                    reader.readAsDataURL(file);
+                                 }
+                              }}
+                           />
+                        </label>
+                        {companyLogo && (
+                           <p className="text-xs text-slate-500 font-bold mt-3 flex items-center gap-2">
+                              <CheckCircle2 className="text-emerald-500" size={14} />
+                              الشعار سيظهر في جميع الفواتير والإيصالات
+                           </p>
+                        )}
+                        {!companyLogo && (
+                           <p className="text-xs text-slate-400 font-bold mt-3">
+                              الصيغ المدعومة: JPG, PNG, GIF (الحد الأقصى: 2 ميجابايت)
+                           </p>
+                        )}
+                     </div>
+                  </div>
+               </div>
+            </div>
+
             <div className="professional-card p-8 bg-white border-2 border-blue-50">
                <div className="flex items-center gap-4 mb-6">
                   <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center"><Timer size={24}/></div>
@@ -1766,6 +1849,877 @@ const CalendarView: React.FC<CalendarViewProps> = ({ orders, customers, products
     );
 };
 
+// Cash Receipt View Component
+interface CashReceiptViewProps {
+    invoices: Invoice[];
+    customers: Customer[];
+    orders: Order[];
+    paymentReceipts: PaymentReceipt[];
+    setPaymentReceipts: (receipts: PaymentReceipt[]) => void;
+    setInvoices: (invoices: Invoice[]) => void;
+    setOrders: (orders: Order[]) => void;
+    addToast: (message: string, type?: Toast['type']) => void;
+    productsConfig: Record<string, ProductConfig>;
+    companyLogo: string | null;
+}
+
+const CashReceiptView: React.FC<CashReceiptViewProps> = ({ invoices, customers, orders, paymentReceipts, setPaymentReceipts, setInvoices, setOrders, addToast, productsConfig, companyLogo }) => {
+    const [customerSearch, setCustomerSearch] = useState('');
+    const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+    const [receiptForm, setReceiptForm] = useState<{
+        invoiceId: string;
+        amount: number;
+        paymentDate: number;
+        notes?: string;
+    }>({
+        invoiceId: '',
+        amount: 0,
+        paymentDate: Date.now(),
+        notes: ''
+    });
+
+    // Filter customers by search query
+    const filteredCustomers = useMemo(() => {
+        if (!customerSearch.trim()) return [];
+        const query = customerSearch.toLowerCase().trim();
+        return customers.filter(c => 
+            c.name.toLowerCase().includes(query) ||
+            c.phone.includes(query) ||
+            (c.address && c.address.toLowerCase().includes(query))
+        ).slice(0, 8); // Limit to 8 results
+    }, [customers, customerSearch]);
+
+    // Get customer invoices with remaining balance
+    const customerInvoices = useMemo(() => {
+        if (!selectedCustomerId) return [];
+        return invoices
+            .filter(inv => {
+                if (inv.customerId !== selectedCustomerId) return false;
+                const order = orders.find(o => o.id === inv.orderId);
+                if (!order) return false;
+                const paid = order.paidAmount || 0;
+                return inv.totalAmount > paid;
+            })
+            .map(inv => {
+                const order = orders.find(o => o.id === inv.orderId);
+                const paid = order?.paidAmount || 0;
+                const remaining = inv.totalAmount - paid;
+                return { ...inv, remaining, order };
+            })
+            .sort((a, b) => b.remaining - a.remaining);
+    }, [invoices, orders, selectedCustomerId]);
+
+    const selectedCustomer = useMemo(() => {
+        return customers.find(c => c.id === selectedCustomerId);
+    }, [customers, selectedCustomerId]);
+
+    const selectedInvoice = useMemo(() => invoices.find(inv => inv.id === receiptForm.invoiceId), [invoices, receiptForm.invoiceId]);
+    const selectedOrder = useMemo(() => {
+        if (!selectedInvoice) return null;
+        return orders.find(o => o.id === selectedInvoice.orderId);
+    }, [orders, selectedInvoice]);
+
+    const invoiceRemaining = useMemo(() => {
+        if (!selectedInvoice || !selectedOrder) return 0;
+        const paid = selectedOrder.paidAmount || 0;
+        return Math.max(selectedInvoice.totalAmount - paid, 0);
+    }, [selectedInvoice, selectedOrder]);
+
+    const isFormValid = useMemo(() => {
+        return !!receiptForm.invoiceId && receiptForm.amount > 0 && receiptForm.amount <= invoiceRemaining;
+    }, [receiptForm, invoiceRemaining]);
+
+    const generateReceiptNumber = () => {
+        if (paymentReceipts.length === 0) return 1;
+        const maxNumber = Math.max(...paymentReceipts.map(r => r.receiptNumber));
+        return maxNumber + 1;
+    };
+
+    const handleCreateReceipt = (print: boolean) => {
+        if (!isFormValid || !selectedInvoice || !selectedCustomer || !selectedOrder) {
+            addToast("يرجى ملء جميع البيانات بشكل صحيح.", 'error');
+            return;
+        }
+
+        const receiptNumber = generateReceiptNumber();
+        const newReceipt: PaymentReceipt = {
+            id: `receipt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            receiptNumber,
+            invoiceId: receiptForm.invoiceId,
+            customerId: selectedInvoice.customerId,
+            amount: receiptForm.amount,
+            paymentDate: receiptForm.paymentDate,
+            createdAt: Date.now(),
+            notes: receiptForm.notes || undefined
+        };
+
+        // Update order paid amount
+        const newPaidAmount = (selectedOrder.paidAmount || 0) + receiptForm.amount;
+        setOrders(orders.map(o => 
+            o.id === selectedOrder.id 
+                ? { ...o, paidAmount: Math.min(newPaidAmount, selectedInvoice.totalAmount) }
+                : o
+        ));
+
+        // Update invoice status if fully paid
+        if (newPaidAmount >= selectedInvoice.totalAmount) {
+            setInvoices(invoices.map(inv => 
+                inv.id === selectedInvoice.id 
+                    ? { ...inv, status: 'paid' }
+                    : inv
+            ));
+        }
+
+        // Add receipt
+        setPaymentReceipts([newReceipt, ...paymentReceipts].sort((a, b) => b.createdAt - a.createdAt));
+
+        if (print) {
+            printReceipt(newReceipt, selectedCustomer, selectedInvoice, selectedOrder);
+        }
+
+        addToast(print ? "تم إنشاء الإيصال وطباعته بنجاح." : "تم إنشاء الإيصال بنجاح.", 'success');
+        setReceiptForm({ invoiceId: '', amount: 0, paymentDate: Date.now(), notes: '' });
+        setCustomerSearch('');
+        setSelectedCustomerId('');
+    };
+
+    const printReceipt = (receipt: PaymentReceipt, customer: Customer, invoice: Invoice, order: Order) => {
+        const receiptWindow = window.open('', '_blank');
+        if (!receiptWindow) {
+            addToast('يرجى السماح بالنوافذ المنبثقة لطباعة الإيصال', 'error');
+            return;
+        }
+
+        const prodName = productsConfig[order.productType]?.name || order.productType;
+        const prevPaid = order.paidAmount || 0;
+        const remainingAfter = Math.max(invoice.totalAmount - (prevPaid + receipt.amount), 0);
+
+        receiptWindow.document.write(`
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>إيصال استلام نقدي #${receipt.receiptNumber}</title>
+                <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+                    body { padding: 32px; background: #fff; color: #0f172a; }
+                    .receipt { max-width: 820px; margin: 0 auto; }
+                    .header { border-bottom: 4px solid #2563eb; padding-bottom: 20px; margin-bottom: 20px; }
+                    .header-content { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+                    .logo { width: 72px; height: 72px; background: #2563eb; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; font-size: 36px; font-weight: 900; }
+                    h1 { font-size: 28px; font-weight: 900; }
+                    .muted { color: #64748b; font-weight: 700; margin-top: 6px; }
+                    .titleBox { border-right: 4px solid #2563eb; padding-right: 16px; text-align: left; }
+                    .titleBox h2 { font-size: 40px; font-weight: 900; }
+                    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+                    .box { background: #f1f5f9; border: 2px solid #cbd5e1; border-radius: 14px; padding: 16px; }
+                    .box h3 { font-size: 14px; font-weight: 900; color: #334155; margin-bottom: 10px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }
+                    .box p { font-size: 16px; font-weight: 900; margin: 6px 0; overflow-wrap: break-word; word-break: break-word; }
+                    .amount { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 4px solid #2563eb; border-radius: 16px; padding: 24px; margin: 16px 0; text-align: center; }
+                    .amount .label { font-size: 18px; font-weight: 900; color: #1e40af; }
+                    .amount .value { font-size: 56px; font-weight: 900; color: #1e3a8a; margin-top: 8px; }
+                    .rows { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+                    .mini { background: rgba(255,255,255,0.7); border: 2px solid rgba(37,99,235,0.3); border-radius: 14px; padding: 12px; }
+                    .mini .k { color: #0f172a; font-size: 12px; font-weight: 900; }
+                    .mini .v { color: #1e40af; font-size: 18px; font-weight: 900; margin-top: 6px; }
+                    .footer { border-top: 4px solid #0f172a; padding-top: 18px; margin-top: 18px; text-align: center; }
+                    .footer p { font-weight: 900; margin: 6px 0; }
+                    @media print { body { padding: 18px; } }
+                </style>
+            </head>
+            <body>
+                <div class="receipt">
+                    <header class="header">
+                        <div class="header-content">
+                            <div style="display:flex; align-items:center; gap: 14px;">
+                                ${companyLogo ? `<img src="${companyLogo}" alt="شعار الشركة" style="width: 72px; height: 72px; object-fit: contain; border-radius: 16px;" />` : `<div class="logo">D</div>`}
+                                <div>
+                                    <h1>مصنع ديكورا</h1>
+                                    <div class="muted">للأثاث والمطابخ والديكور</div>
+                                </div>
+                            </div>
+                            <div class="titleBox">
+                                <h2>إيصال استلام نقدي</h2>
+                                <div class="muted">رقم الإيصال: #${receipt.receiptNumber}</div>
+                                <div class="muted">التاريخ: ${new Date(receipt.paymentDate).toLocaleDateString('ar-LY')}</div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <section class="grid">
+                        <div class="box">
+                            <h3>استلمنا من</h3>
+                            <p>${customer.name}</p>
+                            <p class="muted" style="font-size: 13px;">${customer.address}</p>
+                            <p class="muted" style="font-size: 13px;">${customer.phone}</p>
+                        </div>
+                        <div class="box">
+                            <h3>معلومات الفاتورة</h3>
+                            <p>فاتورة رقم: #${invoice.invoiceNumber}</p>
+                            <p class="muted" style="font-size: 13px;">${prodName}</p>
+                            <p class="muted" style="font-size: 13px;">إجمالي الفاتورة: ${formatCurrency(invoice.totalAmount)}</p>
+                        </div>
+                    </section>
+
+                    <section class="amount">
+                        <div class="label">مبلغ الدفعة</div>
+                        <div class="value">${formatCurrency(receipt.amount)}</div>
+                        <div class="rows">
+                            <div class="mini"><div class="k">المدفوع سابقاً</div><div class="v">${formatCurrency(prevPaid)}</div></div>
+                            <div class="mini"><div class="k">المدفوع الآن</div><div class="v">${formatCurrency(receipt.amount)}</div></div>
+                            <div class="mini"><div class="k">المتبقي بعد الدفعة</div><div class="v">${formatCurrency(remainingAfter)}</div></div>
+                        </div>
+                    </section>
+
+                    ${receipt.notes ? `<section class="box" style="margin-top: 16px;"><h3>ملاحظات</h3><p style="font-size: 14px;">${receipt.notes}</p></section>` : ''}
+
+                    <footer class="footer">
+                        <p>شكراً لتعاونكم</p>
+                        <p class="muted" style="font-size: 13px;">مصنع ديكورا - بنغازي</p>
+                    </footer>
+                </div>
+            </body>
+            </html>
+        `);
+        receiptWindow.document.close();
+        setTimeout(() => receiptWindow.print(), 700);
+    };
+
+    return (
+        <div className="space-y-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="professional-card p-6">
+                <h3 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                    <Receipt className="text-blue-600" size={28} />
+                    إصدار إيصال استلام نقدي
+                </h3>
+                <div className="space-y-5">
+                    {/* Customer Search */}
+                    <div className="relative">
+                        <label className="block text-sm font-black text-slate-700 mb-2">ابحث عن العميل</label>
+                        <div className="relative">
+                            <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input
+                                type="text"
+                                value={customerSearch}
+                                onChange={e => {
+                                    setCustomerSearch(e.target.value);
+                                    if (!e.target.value.trim()) {
+                                        setSelectedCustomerId('');
+                                        setReceiptForm({ ...receiptForm, invoiceId: '', amount: 0 });
+                                    }
+                                }}
+                                placeholder="اكتب اسم العميل، رقم الهاتف، أو العنوان..."
+                                className="input-professional !py-4 !pr-12 !text-base w-full"
+                            />
+                        </div>
+                        
+                        {/* Customer Search Results */}
+                        {customerSearch.trim() && !selectedCustomerId && filteredCustomers.length > 0 && (
+                            <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-2xl border-2 border-slate-200 max-h-96 overflow-y-auto custom-scrollbar">
+                                {filteredCustomers.map(customer => {
+                                    const customerInvs = invoices.filter(inv => {
+                                        if (inv.customerId !== customer.id) return false;
+                                        const order = orders.find(o => o.id === inv.orderId);
+                                        if (!order) return false;
+                                        const paid = order.paidAmount || 0;
+                                        return inv.totalAmount > paid;
+                                    });
+                                    return (
+                                        <button
+                                            key={customer.id}
+                                            onClick={() => {
+                                                setSelectedCustomerId(customer.id);
+                                                setCustomerSearch(customer.name);
+                                                setReceiptForm({ ...receiptForm, invoiceId: '', amount: 0 });
+                                            }}
+                                            className="w-full p-4 hover:bg-blue-50 transition-all text-right border-b border-slate-100 last:border-b-0 group"
+                                        >
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-1">
+                                                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white font-black text-lg">
+                                                            {customer.name.charAt(0)}
+                                                        </div>
+                                                        <div>
+                                                            <p className="font-black text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
+                                                                {customer.name}
+                                                            </p>
+                                                            <p className="text-xs text-slate-500 font-bold mt-0.5">
+                                                                {customer.phone}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    {customer.address && (
+                                                        <p className="text-xs text-slate-400 pr-13 mt-1">{customer.address}</p>
+                                                    )}
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-black">
+                                                        {customerInvs.length} فاتورة
+                                                    </span>
+                                                    {customerInvs.length > 0 && (
+                                                        <span className="text-xs text-emerald-600 font-black">
+                                                            متبقي
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        
+                        {customerSearch.trim() && !selectedCustomerId && filteredCustomers.length === 0 && (
+                            <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-6 text-center">
+                                <User className="mx-auto text-slate-300 mb-3" size={48} />
+                                <p className="text-slate-400 font-bold">لا توجد نتائج للبحث</p>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Selected Customer Info */}
+                    {selectedCustomer && (
+                        <div className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200">
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg">
+                                    {selectedCustomer.name.charAt(0)}
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-black text-xl text-slate-900">{selectedCustomer.name}</h4>
+                                    <p className="text-sm text-slate-600 font-bold mt-1">{selectedCustomer.phone}</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setSelectedCustomerId('');
+                                        setCustomerSearch('');
+                                        setReceiptForm({ ...receiptForm, invoiceId: '', amount: 0 });
+                                    }}
+                                    className="p-2 hover:bg-white/50 rounded-lg transition-all"
+                                >
+                                    <X size={20} className="text-slate-500" />
+                                </button>
+                            </div>
+                            {customerInvoices.length === 0 ? (
+                                <div className="text-center py-4">
+                                    <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={32} />
+                                    <p className="text-sm font-bold text-slate-600">جميع فواتير هذا العميل مدفوعة بالكامل</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    <p className="text-xs font-black text-slate-600 mb-3">اختر الفاتورة:</p>
+                                    {customerInvoices.map(({ remaining, order, ...inv }) => {
+                                        const prodName = order ? (productsConfig[order.productType]?.name || order.productType) : 'غير معروف';
+                                        return (
+                                            <button
+                                                key={inv.id}
+                                                onClick={() => setReceiptForm({ ...receiptForm, invoiceId: inv.id, amount: 0 })}
+                                                className={`w-full p-4 rounded-xl border-2 transition-all text-right ${
+                                                    receiptForm.invoiceId === inv.id
+                                                        ? 'bg-blue-600 border-blue-600 text-white shadow-xl'
+                                                        : 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-lg'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-3 mb-2">
+                                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-lg ${
+                                                                receiptForm.invoiceId === inv.id
+                                                                    ? 'bg-white/20 text-white'
+                                                                    : 'bg-blue-100 text-blue-600'
+                                                            }`}>
+                                                                #{inv.invoiceNumber}
+                                                            </div>
+                                                            <div>
+                                                                <p className={`font-black text-base ${
+                                                                    receiptForm.invoiceId === inv.id ? 'text-white' : 'text-slate-900'
+                                                                }`}>
+                                                                    {prodName}
+                                                                </p>
+                                                                <p className={`text-xs mt-0.5 ${
+                                                                    receiptForm.invoiceId === inv.id ? 'text-blue-100' : 'text-slate-500'
+                                                                }`}>
+                                                                    {new Date(inv.issueDate).toLocaleDateString('ar-LY')}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-left">
+                                                        <p className={`text-xs font-bold mb-1 ${
+                                                            receiptForm.invoiceId === inv.id ? 'text-blue-100' : 'text-slate-600'
+                                                        }`}>
+                                                            المتبقي
+                                                        </p>
+                                                        <p className={`text-xl font-black tabular-nums ${
+                                                            receiptForm.invoiceId === inv.id ? 'text-white' : 'text-amber-600'
+                                                        }`}>
+                                                            {formatCurrency(remaining)}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {selectedInvoice && selectedCustomer && (
+                        <>
+                            <div className="p-4 bg-slate-50 rounded-lg">
+                                <p className="text-sm font-bold text-slate-600">العميل: {selectedCustomer.name}</p>
+                                <p className="text-sm font-bold text-slate-600 mt-1">إجمالي الفاتورة: {formatCurrency(selectedInvoice.totalAmount)}</p>
+                                <p className="text-sm font-bold text-slate-600 mt-1">المدفوع: {formatCurrency(selectedOrder?.paidAmount || 0)}</p>
+                                <p className="text-lg font-black text-amber-600 mt-2">المتبقي: {formatCurrency(invoiceRemaining)}</p>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-black text-slate-700 mb-2">مبلغ الدفعة</label>
+                                <input 
+                                    type="number"
+                                    value={receiptForm.amount || ''}
+                                    onChange={e => setReceiptForm({...receiptForm, amount: parseFloat(e.target.value) || 0})}
+                                    placeholder="أدخل المبلغ"
+                                    min={0}
+                                    max={invoiceRemaining || undefined}
+                                    step="0.01"
+                                    className="input-professional tabular-nums text-center"
+                                />
+                                <div className="flex gap-2 mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setReceiptForm({...receiptForm, amount: invoiceRemaining})}
+                                        className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl py-2 font-black text-xs transition-all"
+                                    >
+                                        المتبقي بالكامل
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setReceiptForm({...receiptForm, amount: 0})}
+                                        className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl py-2 font-black text-xs transition-all"
+                                    >
+                                        تصفير
+                                    </button>
+                                </div>
+                                {receiptForm.amount > invoiceRemaining && (
+                                    <p className="text-xs font-black text-red-600 mt-2">المبلغ يتجاوز المتبقي على الفاتورة</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-black text-slate-700 mb-2">تاريخ الاستلام</label>
+                                <input 
+                                    type="date"
+                                    value={new Date(receiptForm.paymentDate).toISOString().split('T')[0]}
+                                    onChange={e => setReceiptForm({...receiptForm, paymentDate: new Date(e.target.value).getTime()})}
+                                    className="input-professional"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-black text-slate-700 mb-2">ملاحظات (اختياري)</label>
+                                <textarea
+                                    value={receiptForm.notes || ''}
+                                    onChange={e => setReceiptForm({...receiptForm, notes: e.target.value})}
+                                    placeholder="أضف ملاحظات..."
+                                    className="input-professional"
+                                    rows={3}
+                                />
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => handleCreateReceipt(false)}
+                                    disabled={!isFormValid}
+                                    className={`flex-1 py-4 rounded-xl font-black text-lg shadow-xl transition-all ${
+                                        isFormValid
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                            : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                    }`}
+                                >
+                                    حفظ الإيصال
+                                </button>
+                                <button
+                                    onClick={() => handleCreateReceipt(true)}
+                                    disabled={!isFormValid}
+                                    className={`px-6 py-4 rounded-xl font-black text-sm shadow-xl transition-all flex items-center gap-2 ${
+                                        isFormValid
+                                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                            : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <Printer size={18} />
+                                    حفظ وطباعة
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {selectedInvoice && selectedCustomer && (
+                <div className="professional-card p-6">
+                    <h3 className="text-xl font-black text-slate-900 mb-4">ملخص الفاتورة</h3>
+                    <div className="space-y-4">
+                        <div className="p-4 bg-slate-50 rounded-lg">
+                            <p className="text-sm font-bold text-slate-600">العميل</p>
+                            <p className="font-black text-lg">{selectedCustomer.name}</p>
+                        </div>
+                        <div className="p-4 bg-slate-50 rounded-lg">
+                            <p className="text-sm font-bold text-slate-600">رقم الفاتورة</p>
+                            <p className="font-black text-lg">#${selectedInvoice.invoiceNumber}</p>
+                        </div>
+                        <div className="p-4 bg-red-50 rounded-lg border-2 border-red-200">
+                            <p className="text-sm font-bold text-slate-600">إجمالي الفاتورة</p>
+                            <p className="font-black text-2xl text-red-600">{formatCurrency(selectedInvoice.totalAmount)}</p>
+                        </div>
+                        <div className="p-4 bg-emerald-50 rounded-lg border-2 border-emerald-200">
+                            <p className="text-sm font-bold text-slate-600">المدفوع</p>
+                            <p className="font-black text-2xl text-emerald-600">{formatCurrency(selectedOrder?.paidAmount || 0)}</p>
+                        </div>
+                        <div className="p-4 bg-amber-50 rounded-lg border-2 border-amber-200">
+                            <p className="text-sm font-bold text-slate-600">المتبقي</p>
+                            <p className="font-black text-2xl text-amber-600">{formatCurrency(invoiceRemaining)}</p>
+                        </div>
+                        {receiptForm.amount > 0 && (
+                            <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
+                                <p className="text-sm font-bold text-slate-600">الدفعة الجديدة</p>
+                                <p className="font-black text-2xl text-blue-600">{formatCurrency(receiptForm.amount)}</p>
+                                <p className="text-xs text-slate-500 mt-2">المتبقي بعد الدفعة: {formatCurrency(invoiceRemaining - receiptForm.amount)}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+            </div>
+
+            {/* Recent Receipts Table */}
+            <div className="professional-card p-6">
+            <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                    <FileText className="text-blue-600" size={24} />
+                    الإيصالات الصادرة مؤخراً
+                </h3>
+                <span className="px-4 py-2 bg-blue-100 text-blue-700 rounded-xl font-black text-sm">
+                    {paymentReceipts.length} إيصال
+                </span>
+            </div>
+            
+            {paymentReceipts.length === 0 ? (
+                <div className="text-center py-12">
+                    <Receipt className="mx-auto text-slate-300 mb-4" size={64} />
+                    <p className="text-slate-400 font-bold text-lg">لا توجد إيصالات صادرة بعد</p>
+                    <p className="text-slate-300 text-sm mt-2">سيتم عرض الإيصالات هنا بعد إصدارها</p>
+                </div>
+            ) : (
+                <div className="overflow-x-auto rounded-2xl border-2 border-slate-200">
+                    <table className="w-full border-collapse">
+                        <thead>
+                            <tr className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300">
+                                <th className="p-4 text-right font-black text-slate-700">رقم الإيصال</th>
+                                <th className="p-4 text-right font-black text-slate-700">العميل</th>
+                                <th className="p-4 text-right font-black text-slate-700">رقم الفاتورة</th>
+                                <th className="p-4 text-right font-black text-slate-700">المبلغ</th>
+                                <th className="p-4 text-right font-black text-slate-700">تاريخ الاستلام</th>
+                                <th className="p-4 text-center font-black text-slate-700">الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {paymentReceipts.slice(0, 10).map((receipt) => {
+                                const customer = customers.find(c => c.id === receipt.customerId);
+                                const invoice = invoices.find(inv => inv.id === receipt.invoiceId);
+                                const order = orders.find(o => o.id === invoice?.orderId);
+                                const prodName = order ? (productsConfig[order.productType]?.name || order.productType) : 'غير معروف';
+                                
+                                return (
+                                    <tr key={receipt.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-black">
+                                                    #{receipt.receiptNumber}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 font-black text-sm">
+                                                    {customer?.name.charAt(0) || '?'}
+                                                </div>
+                                                <div>
+                                                    <p className="font-black text-slate-900">{customer?.name || 'غير معروف'}</p>
+                                                    <p className="text-xs text-slate-500 font-bold">{customer?.phone || ''}</p>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div>
+                                                <p className="font-black text-slate-900">#{invoice?.invoiceNumber || 'غير معروف'}</p>
+                                                <p className="text-xs text-slate-500 font-bold">{prodName}</p>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <p className="font-black text-emerald-600 text-lg tabular-nums">{formatCurrency(receipt.amount)}</p>
+                                        </td>
+                                        <td className="p-4">
+                                            <p className="font-bold text-slate-700 tabular-nums">{new Date(receipt.paymentDate).toLocaleDateString('ar-LY')}</p>
+                                            <p className="text-xs text-slate-400 font-bold">{new Date(receipt.paymentDate).toLocaleTimeString('ar-LY', { hour: '2-digit', minute: '2-digit' })}</p>
+                                        </td>
+                                        <td className="p-4">
+                                            <button
+                                                onClick={() => {
+                                                    if (customer && invoice && order) {
+                                                        printReceipt(receipt, customer, invoice, order);
+                                                    } else {
+                                                        addToast("لا يمكن طباعة الإيصال: بيانات غير مكتملة", 'error');
+                                                    }
+                                                }}
+                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-sm transition-all flex items-center gap-2 shadow-lg hover:shadow-xl"
+                                            >
+                                                <Printer size={16} />
+                                                طباعة
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                    {paymentReceipts.length > 10 && (
+                        <div className="p-4 bg-slate-50 border-t-2 border-slate-200 text-center">
+                            <p className="text-sm font-bold text-slate-600">
+                                عرض {Math.min(10, paymentReceipts.length)} من {paymentReceipts.length} إيصال
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+            </div>
+        </div>
+    );
+};
+
+// Receipts Archive View Component
+interface ReceiptsArchiveViewProps {
+    paymentReceipts: PaymentReceipt[];
+    customers: Customer[];
+    invoices: Invoice[];
+    orders: Order[];
+    productsConfig: Record<string, ProductConfig>;
+    companyLogo: string | null;
+}
+
+const ReceiptsArchiveView: React.FC<ReceiptsArchiveViewProps> = ({ paymentReceipts, customers, invoices, orders, productsConfig, companyLogo }) => {
+    const [searchQuery, setSearchQuery] = useState('');
+
+    const filteredReceipts = useMemo(() => {
+        const lowerQuery = searchQuery.toLowerCase().trim();
+        if (!lowerQuery) return paymentReceipts;
+        return paymentReceipts.filter(receipt => {
+            const customer = customers.find(c => c.id === receipt.customerId);
+            const invoice = invoices.find(inv => inv.id === receipt.invoiceId);
+            return (
+                customer?.name.toLowerCase().includes(lowerQuery) ||
+                receipt.receiptNumber.toString().includes(lowerQuery) ||
+                invoice?.invoiceNumber.toString().includes(lowerQuery)
+            );
+        });
+    }, [paymentReceipts, customers, invoices, searchQuery]);
+
+    const printReceiptFromArchive = (receipt: PaymentReceipt) => {
+        const customer = customers.find(c => c.id === receipt.customerId);
+        const invoice = invoices.find(inv => inv.id === receipt.invoiceId);
+        const order = orders.find(o => o.id === invoice?.orderId);
+        if (!customer || !invoice || !order) return;
+
+        const receiptWindow = window.open('', '_blank');
+        if (!receiptWindow) return;
+
+        const prodName = productsConfig[order.productType]?.name || order.productType;
+        const prevPaid = (order.paidAmount || 0) - receipt.amount;
+        const remainingAfter = Math.max(invoice.totalAmount - (order.paidAmount || 0), 0);
+
+        receiptWindow.document.write(`
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>إيصال استلام نقدي #${receipt.receiptNumber}</title>
+                <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+                <style>
+                    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Tajawal', sans-serif; }
+                    body { padding: 32px; background: #fff; color: #0f172a; }
+                    .receipt { max-width: 820px; margin: 0 auto; }
+                    .header { border-bottom: 4px solid #2563eb; padding-bottom: 20px; margin-bottom: 20px; }
+                    .header-content { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+                    .logo { width: 72px; height: 72px; background: #2563eb; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; font-size: 36px; font-weight: 900; }
+                    h1 { font-size: 28px; font-weight: 900; }
+                    .muted { color: #64748b; font-weight: 700; margin-top: 6px; }
+                    .titleBox { border-right: 4px solid #2563eb; padding-right: 16px; text-align: left; }
+                    .titleBox h2 { font-size: 40px; font-weight: 900; }
+                    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+                    .box { background: #f1f5f9; border: 2px solid #cbd5e1; border-radius: 14px; padding: 16px; }
+                    .box h3 { font-size: 14px; font-weight: 900; color: #334155; margin-bottom: 10px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }
+                    .box p { font-size: 16px; font-weight: 900; margin: 6px 0; overflow-wrap: break-word; word-break: break-word; }
+                    .amount { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); border: 4px solid #2563eb; border-radius: 16px; padding: 24px; margin: 16px 0; text-align: center; }
+                    .amount .label { font-size: 18px; font-weight: 900; color: #1e40af; }
+                    .amount .value { font-size: 56px; font-weight: 900; color: #1e3a8a; margin-top: 8px; }
+                    .rows { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+                    .mini { background: rgba(255,255,255,0.7); border: 2px solid rgba(37,99,235,0.3); border-radius: 14px; padding: 12px; }
+                    .mini .k { color: #0f172a; font-size: 12px; font-weight: 900; }
+                    .mini .v { color: #1e40af; font-size: 18px; font-weight: 900; margin-top: 6px; }
+                    .footer { border-top: 4px solid #0f172a; padding-top: 18px; margin-top: 18px; text-align: center; }
+                    .footer p { font-weight: 900; margin: 6px 0; }
+                    @media print { body { padding: 18px; } }
+                </style>
+            </head>
+            <body>
+                <div class="receipt">
+                    <header class="header">
+                        <div class="header-content">
+                            <div style="display:flex; align-items:center; gap: 14px;">
+                                ${companyLogo ? `<img src="${companyLogo}" alt="شعار الشركة" style="width: 72px; height: 72px; object-fit: contain; border-radius: 16px;" />` : `<div class="logo">D</div>`}
+                                <div>
+                                    <h1>مصنع ديكورا</h1>
+                                    <div class="muted">للأثاث والمطابخ والديكور</div>
+                                </div>
+                            </div>
+                            <div class="titleBox">
+                                <h2>إيصال استلام نقدي</h2>
+                                <div class="muted">رقم الإيصال: #${receipt.receiptNumber}</div>
+                                <div class="muted">التاريخ: ${new Date(receipt.paymentDate).toLocaleDateString('ar-LY')}</div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <section class="grid">
+                        <div class="box">
+                            <h3>استلمنا من</h3>
+                            <p>${customer.name}</p>
+                            <p class="muted" style="font-size: 13px;">${customer.address}</p>
+                            <p class="muted" style="font-size: 13px;">${customer.phone}</p>
+                        </div>
+                        <div class="box">
+                            <h3>معلومات الفاتورة</h3>
+                            <p>فاتورة رقم: #${invoice.invoiceNumber}</p>
+                            <p class="muted" style="font-size: 13px;">${prodName}</p>
+                            <p class="muted" style="font-size: 13px;">إجمالي الفاتورة: ${formatCurrency(invoice.totalAmount)}</p>
+                        </div>
+                    </section>
+
+                    <section class="amount">
+                        <div class="label">مبلغ الدفعة</div>
+                        <div class="value">${formatCurrency(receipt.amount)}</div>
+                        <div class="rows">
+                            <div class="mini"><div class="k">المدفوع سابقاً</div><div class="v">${formatCurrency(prevPaid)}</div></div>
+                            <div class="mini"><div class="k">المدفوع الآن</div><div class="v">${formatCurrency(receipt.amount)}</div></div>
+                            <div class="mini"><div class="k">المتبقي بعد الدفعة</div><div class="v">${formatCurrency(remainingAfter)}</div></div>
+                        </div>
+                    </section>
+
+                    ${receipt.notes ? `<section class="box" style="margin-top: 16px;"><h3>ملاحظات</h3><p style="font-size: 14px;">${receipt.notes}</p></section>` : ''}
+
+                    <footer class="footer">
+                        <p>شكراً لتعاونكم</p>
+                        <p class="muted" style="font-size: 13px;">مصنع ديكورا - بنغازي</p>
+                    </footer>
+                </div>
+            </body>
+            </html>
+        `);
+        receiptWindow.document.close();
+        setTimeout(() => receiptWindow.print(), 700);
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="professional-card p-6">
+                <h3 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                    <ArchiveIcon className="text-indigo-600" size={28} />
+                    أرشيف إيصالات الاستلام النقدي
+                </h3>
+                <div className="relative mb-6">
+                    <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                        type="text"
+                        placeholder="ابحث برقم الإيصال، اسم العميل، أو رقم الفاتورة..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        className="input-professional !py-3 !pr-11 !text-sm w-full"
+                    />
+                </div>
+                <div className="p-4 bg-slate-50 rounded-lg">
+                    <p className="text-sm font-bold text-slate-600">إجمالي الإيصالات: <span className="font-black text-lg text-slate-900">{paymentReceipts.length}</span></p>
+                    <p className="text-sm font-bold text-slate-600 mt-1">إجمالي المبالغ: <span className="font-black text-lg text-emerald-600">{formatCurrency(paymentReceipts.reduce((sum, r) => sum + r.amount, 0))}</span></p>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                {filteredReceipts.length === 0 ? (
+                    <div className="professional-card p-12 text-center">
+                        <ArchiveIcon className="mx-auto text-slate-300 mb-4" size={64} />
+                        <p className="text-slate-400 font-bold text-lg">لا توجد إيصالات {searchQuery ? 'مطابقة للبحث' : 'مسجلة'}</p>
+                    </div>
+                ) : (
+                    filteredReceipts.map(receipt => {
+                        const customer = customers.find(c => c.id === receipt.customerId);
+                        const invoice = invoices.find(inv => inv.id === receipt.invoiceId);
+                        const order = orders.find(o => o.id === invoice?.orderId);
+                        const prodName = order ? (productsConfig[order.productType]?.name || order.productType) : 'غير معروف';
+
+                        return (
+                            <div key={receipt.id} className="professional-card p-6 hover:shadow-xl transition-all">
+                                <div className="flex justify-between items-start gap-4">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-black text-lg">
+                                                #{receipt.receiptNumber}
+                                            </div>
+                                            <div>
+                                                <h4 className="font-black text-lg text-slate-900">{customer?.name || 'غير معروف'}</h4>
+                                                <p className="text-sm text-slate-600 font-bold">فاتورة #${invoice?.invoiceNumber || '---'}</p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 mt-4">
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-600">المبلغ</p>
+                                                <p className="font-black text-xl text-emerald-600 tabular-nums">{formatCurrency(receipt.amount)}</p>
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-600">تاريخ الاستلام</p>
+                                                <p className="font-black text-sm text-slate-900">{new Date(receipt.paymentDate).toLocaleDateString('ar-LY')}</p>
+                                            </div>
+                                        </div>
+                                        {receipt.notes && (
+                                            <div className="mt-3 p-3 bg-slate-50 rounded-lg">
+                                                <p className="text-xs font-bold text-slate-600 mb-1">ملاحظات</p>
+                                                <p className="text-sm text-slate-700">{receipt.notes}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            onClick={() => printReceiptFromArchive(receipt)}
+                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg font-black text-xs hover:bg-blue-700 transition-all flex items-center gap-2"
+                                        >
+                                            <Printer size={16} />
+                                            طباعة
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+        </div>
+    );
+};
+
 interface AccountingViewProps {
     orders: Order[];
     customers: Customer[];
@@ -1774,18 +2728,20 @@ interface AccountingViewProps {
     expenses: Expense[];
     setExpenses: (expenses: Expense[]) => void;
     setOrders: (orders: Order[]) => void;
+    paymentReceipts: PaymentReceipt[];
+    setPaymentReceipts: (receipts: PaymentReceipt[]) => void;
     addToast: (message: string, type?: Toast['type']) => void;
     openInvoice: (invoice: Invoice) => void;
     handlePrintFinancialReport: () => void;
     productsConfig: Record<string, ProductConfig>;
+    companyLogo: string | null;
 }
 
-const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invoices, setInvoices, expenses, setExpenses, setOrders, addToast, openInvoice, handlePrintFinancialReport, productsConfig }) => {
+const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invoices, setInvoices, expenses, setExpenses, setOrders, paymentReceipts, setPaymentReceipts, addToast, openInvoice, handlePrintFinancialReport, productsConfig, companyLogo }) => {
     
-    const [activeAccountingTab, setActiveAccountingTab] = useState<'transactions' | 'edit-invoice' | 'receive-payment' | 'statements'>('transactions');
+    const [activeAccountingTab, setActiveAccountingTab] = useState<'transactions' | 'edit-invoice' | 'cash-receipt' | 'receipts-archive' | 'statements'>('transactions');
     const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
     const [editInvoiceForm, setEditInvoiceForm] = useState<{items: {description: string, amount: number}[]}>({items: []});
-    const [receivePaymentForm, setReceivePaymentForm] = useState<{customerId: string, orderId: string, amount: number, paymentDate: number}>({customerId: '', orderId: '', amount: 0, paymentDate: Date.now()});
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     
     // New simplified invoice form with multiple products support
@@ -1809,6 +2765,11 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
     const [paymentForm, setPaymentForm] = useState<{invoiceId: string, amount: number}>({invoiceId: '', amount: 0});
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCustomerForStatement, setSelectedCustomerForStatement] = useState<string>('');
+    const [customerSearchForStatement, setCustomerSearchForStatement] = useState('');
+    const [sortField, setSortField] = useState<'invoiceNumber' | 'issueDate' | 'totalAmount' | 'status' | 'customer'>('issueDate');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+    const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all');
+    const [activeTransactionsSubTab, setActiveTransactionsSubTab] = useState<'invoices' | 'expenses'>('invoices');
 
     const financials = useMemo(() => {
         const totalRevenue = orders.filter(o => o.status === 'delivered').reduce((sum, o) => sum + (o.price || 0), 0);
@@ -1874,27 +2835,90 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
     const invoiceForPayment = invoices.find(inv => inv.id === paymentForm.invoiceId);
     
     const filteredInvoices = useMemo(() => {
+      let result = invoices;
+      
+      // Filter by search query
       const lowerCaseQuery = searchQuery.toLowerCase().trim();
-      if (!lowerCaseQuery) return invoices;
-      return invoices.filter(inv => {
-          const customer = customers.find(c => c.id === inv.customerId);
-          return (
-              customer?.name.toLowerCase().includes(lowerCaseQuery) ||
-              inv.invoiceNumber.toString().includes(lowerCaseQuery)
-          );
+      if (lowerCaseQuery) {
+          result = result.filter(inv => {
+              const customer = customers.find(c => c.id === inv.customerId);
+              return (
+                  customer?.name.toLowerCase().includes(lowerCaseQuery) ||
+                  inv.invoiceNumber.toString().includes(lowerCaseQuery)
+              );
+          });
+      }
+      
+      // Filter by status
+      if (statusFilter !== 'all') {
+          result = result.filter(inv => inv.status === statusFilter);
+      }
+      
+      // Sort
+      result = [...result].sort((a, b) => {
+          let aValue: any;
+          let bValue: any;
+          
+          switch (sortField) {
+              case 'invoiceNumber':
+                  aValue = a.invoiceNumber;
+                  bValue = b.invoiceNumber;
+                  break;
+              case 'issueDate':
+                  aValue = a.issueDate;
+                  bValue = b.issueDate;
+                  break;
+              case 'totalAmount':
+                  aValue = a.totalAmount;
+                  bValue = b.totalAmount;
+                  break;
+              case 'status':
+                  aValue = a.status;
+                  bValue = b.status;
+                  break;
+              case 'customer':
+                  const aCustomer = customers.find(c => c.id === a.customerId);
+                  const bCustomer = customers.find(c => c.id === b.customerId);
+                  aValue = aCustomer?.name || '';
+                  bValue = bCustomer?.name || '';
+                  break;
+              default:
+                  return 0;
+          }
+          
+          if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+          if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
       });
-    }, [invoices, customers, searchQuery]);
+      
+      return result;
+    }, [invoices, customers, searchQuery, statusFilter, sortField, sortDirection]);
+
+    // Filter customers for statement search
+    const filteredCustomersForStatement = useMemo(() => {
+        if (!customerSearchForStatement.trim()) return [];
+        const query = customerSearchForStatement.toLowerCase().trim();
+        return customers.filter(c => 
+            c.name.toLowerCase().includes(query) ||
+            c.phone.includes(query) ||
+            (c.address && c.address.toLowerCase().includes(query))
+        ).slice(0, 8);
+    }, [customers, customerSearchForStatement]);
 
     // Customer statements
     const customerStatements = useMemo(() => {
         if (!selectedCustomerForStatement) return null;
         const customerOrders = orders.filter(o => o.customerId === selectedCustomerForStatement);
         const customerInvoices = invoices.filter(inv => inv.customerId === selectedCustomerForStatement);
-        const totalDebit = customerOrders.reduce((sum, o) => sum + (o.price || 0), 0);
-        const totalCredit = customerOrders.reduce((sum, o) => sum + (o.paidAmount || 0), 0);
-        const balance = totalDebit - totalCredit;
-        return { customerOrders, customerInvoices, totalDebit, totalCredit, balance };
+        // المستحقات: إجمالي الفواتير/الطلبات
+        const totalDue = customerOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+        // المدفوع: إجمالي المبالغ المدفوعة
+        const totalPaid = customerOrders.reduce((sum, o) => sum + (o.paidAmount || 0), 0);
+        // المتبقي: المستحقات - المدفوع
+        const remaining = totalDue - totalPaid;
+        return { customerOrders, customerInvoices, totalDue, totalPaid, remaining };
     }, [orders, invoices, selectedCustomerForStatement]);
+
 
     return (
         <div className="space-y-8 tab-enter">
@@ -1936,14 +2960,24 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
                         تحرير فاتورة
                     </button>
                     <button 
-                        onClick={() => setActiveAccountingTab('receive-payment')}
+                        onClick={() => setActiveAccountingTab('cash-receipt')}
                         className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm whitespace-nowrap transition-all ${
-                            activeAccountingTab === 'receive-payment' 
-                                ? 'bg-green-600 text-white shadow-lg' 
+                            activeAccountingTab === 'cash-receipt' 
+                                ? 'bg-blue-600 text-white shadow-lg' 
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                         }`}>
-                        <CircleDollarSign size={18} />
-                        استلام دفعة
+                        <Receipt size={18} />
+                        إيصال استلام نقدي
+                    </button>
+                    <button 
+                        onClick={() => setActiveAccountingTab('receipts-archive')}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm whitespace-nowrap transition-all ${
+                            activeAccountingTab === 'receipts-archive' 
+                                ? 'bg-indigo-600 text-white shadow-lg' 
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}>
+                        <ArchiveIcon size={18} />
+                        أرشيف الإيصالات
                     </button>
                     <button 
                         onClick={() => setActiveAccountingTab('statements')}
@@ -1960,16 +2994,78 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
 
             {/* Transactions Tab */}
             {activeAccountingTab === 'transactions' && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                    {/* Left Column: Invoice Issuance & Invoices List */}
-                    <div className="lg:col-span-8 space-y-8">
-                    {/* NEW INVOICE ISSUANCE SECTION */}
-                    <div className="professional-card p-8">
-                        <h2 className="text-3xl font-black text-slate-900 mb-6 flex items-center gap-3">
-                            <FileText className="text-blue-600" size={32} />
-                            إصدار فاتورة جديدة
-                        </h2>
-                        <div className="space-y-6">
+                <div className="space-y-8">
+                    {/* Financial Overview - Top Section */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div className="professional-card p-6 bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <TrendingUp className="text-emerald-600" size={24} />
+                                <span className="text-xs font-black text-emerald-700 uppercase">إجمالي الإيرادات</span>
+                            </div>
+                            <p className="text-3xl font-black text-emerald-700 tabular-nums">{formatCurrency(financials.totalRevenue)}</p>
+                        </div>
+                        <div className="professional-card p-6 bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <CircleDollarSign className="text-amber-600" size={24} />
+                                <span className="text-xs font-black text-amber-700 uppercase">ديون مستحقة</span>
+                            </div>
+                            <p className="text-3xl font-black text-amber-700 tabular-nums">{formatCurrency(financials.accountsReceivable)}</p>
+                        </div>
+                        <div className="professional-card p-6 bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <MinusCircle className="text-red-600" size={24} />
+                                <span className="text-xs font-black text-red-700 uppercase">إجمالي المصروفات</span>
+                            </div>
+                            <p className="text-3xl font-black text-red-700 tabular-nums">{formatCurrency(financials.totalExpenses)}</p>
+                        </div>
+                        <div className="professional-card p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200">
+                            <div className="flex items-center justify-between mb-3">
+                                <BarChart3 className="text-blue-600" size={24} />
+                                <span className="text-xs font-black text-blue-700 uppercase">صافي الربح</span>
+                            </div>
+                            <p className="text-3xl font-black text-blue-700 tabular-nums">{formatCurrency(financials.netProfit)}</p>
+                        </div>
+                    </div>
+
+                    {/* Sub Tabs */}
+                    <div className="professional-card p-2">
+                        <div className="flex gap-2">
+                            <button 
+                                onClick={() => setActiveTransactionsSubTab('invoices')}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm transition-all ${
+                                    activeTransactionsSubTab === 'invoices' 
+                                        ? 'bg-orange-600 text-white shadow-lg' 
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}>
+                                <FileText size={18} />
+                                الفواتير
+                            </button>
+                            <button 
+                                onClick={() => setActiveTransactionsSubTab('expenses')}
+                                className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-sm transition-all ${
+                                    activeTransactionsSubTab === 'expenses' 
+                                        ? 'bg-red-600 text-white shadow-lg' 
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}>
+                                <MinusCircle size={18} />
+                                المصروفات
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Invoices Sub Tab */}
+                    {activeTransactionsSubTab === 'invoices' && (
+                        <div className="space-y-8">
+                            {/* NEW INVOICE ISSUANCE SECTION */}
+                            <div className="professional-card p-8 border-2 border-blue-200 bg-gradient-to-br from-blue-50/30 to-white">
+                                <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-blue-200">
+                                    <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                                        <FileText className="text-blue-600" size={28} />
+                                        إصدار فاتورة جديدة
+                                    </h2>
+                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                </div>
+                                <div className="space-y-6">
                             {/* Step 1: Select Customer */}
                             <div>
                                 <label className="block text-sm font-black text-slate-700 mb-3">1. اختر العميل</label>
@@ -2313,149 +3409,380 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
                                 }
                                 return null;
                             })()}
-                        </div>
-                    </div>
-                    {/* END NEW INVOICE ISSUANCE SECTION */}
+                                </div>
+                            </div>
+                            {/* END NEW INVOICE ISSUANCE SECTION */}
 
-                    {/* الفواتير الصادرة */}
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center mb-6">
-                          <h3 className="text-xl font-black flex items-center gap-3 text-slate-900">
-                              <FileText className="text-blue-600" />
-                              الفواتير الصادرة
-                          </h3>
-                          <div className="relative w-full max-w-sm group">
-                            <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input type="text" placeholder="بحث بالعميل أو رقم الفاتورة..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="input-professional !py-3 !pr-11 !text-sm" />
+                            {/* الفواتير الصادرة */}
+                            <div className="space-y-4">
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                              <div className="flex items-center gap-4">
+                                <h3 className="text-2xl font-black flex items-center gap-3 text-slate-900">
+                                    <Receipt className="text-orange-600" size={24} />
+                                    الفواتير الصادرة
+                                </h3>
+                                <span className="px-4 py-2 bg-orange-100 text-orange-700 rounded-xl font-black text-sm">
+                                    {filteredInvoices.length} فاتورة
+                                </span>
+                              </div>
+                          <div className="flex items-center gap-3 w-full md:w-auto">
+                            <select 
+                                value={statusFilter} 
+                                onChange={e => setStatusFilter(e.target.value as InvoiceStatus | 'all')}
+                                className="input-professional !py-3 !text-sm flex-shrink-0"
+                            >
+                                <option value="all">جميع الحالات</option>
+                                <option value="due">مستحقة</option>
+                                <option value="paid">مدفوعة</option>
+                                <option value="overdue">متأخرة</option>
+                            </select>
+                            <div className="relative flex-1 md:max-w-sm group">
+                                <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input type="text" placeholder="بحث بالعميل أو رقم الفاتورة..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="input-professional !py-3 !pr-11 !text-sm" />
+                            </div>
                           </div>
                         </div>
-                        <div className="space-y-4">
-                            {filteredInvoices.map(inv => {
-                                const customer = customers.find(c => c.id === inv.customerId);
-                                const order = orders.find(o => o.id === inv.orderId);
-                                if (!customer || !order) return null;
-
-                                const statusInfo = INVOICE_STATUS_MAP[inv.status];
-                                const remainingBalance = (order.price || 0) - (order.paidAmount || 0);
-                                const progress = order.price ? ((order.paidAmount || 0) / order.price) * 100 : 0;
-
-                                return (
-                                    <div key={inv.id} className="professional-card p-6 grid grid-cols-1 md:grid-cols-12 gap-6 items-center group transition-all duration-300 hover:border-blue-300 hover:shadow-xl">
-                                        {/* Main Invoice Info */}
-                                        <div className="col-span-12 md:col-span-8 flex items-start gap-6">
-                                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-3xl flex-shrink-0 transition-colors ${
-                                                statusInfo.bg.replace('bg-', 'bg-') + ' text-' + statusInfo.color.replace('text-', '')
-                                            }`}>
-                                                #{inv.invoiceNumber}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-baseline gap-3">
-                                                    <h4 className="text-2xl font-black text-slate-900 truncate">{customer.name}</h4>
-                                                    <span className={`px-3 py-1 rounded-full text-sm font-black ${statusInfo.bg} ${statusInfo.color}`}>{statusInfo.label}</span>
-                                                </div>
-                                                <p className="text-lg font-bold text-slate-500 mt-2 truncate">{order.productType}</p>
-                                                <div className="flex items-center gap-4 text-sm font-bold text-slate-500 mt-2">
-                                                   <span className="flex items-center gap-2"><Calendar size={14} className="text-slate-300"/> تاريخ الإصدار: {new Date(inv.issueDate).toLocaleDateString('ar-LY')}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Financials & Actions */}
-                                        <div className="col-span-12 md:col-span-4 flex flex-col md:items-end gap-4 border-t md:border-t-0 md:border-r border-slate-100 pt-4 md:pt-0 md:pr-6">
-                                            <div className="text-right w-full">
-                                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">إجمالي الفاتورة</p>
-                                                <p className="text-3xl font-black text-orange-600 tabular-nums tracking-tighter">{formatCurrency(inv.totalAmount)}</p>
-                                            </div>
-                                            <div className="w-full flex justify-between items-center text-base font-bold text-slate-600">
-                                                <span>المدفوع: <span className="font-black text-emerald-600">{formatCurrency(order.paidAmount)}</span></span>
-                                                <span>المتبقي: <span className="font-black text-red-600">{formatCurrency(remainingBalance)}</span></span>
-                                            </div>
-                                            <div className="w-full bg-slate-100 rounded-full h-2.5">
-                                                <div className={`h-2.5 rounded-full ${statusInfo.bg.replace('bg-', 'bg-')}`} style={{ width: `${progress}%`}}></div>
-                                            </div>
-                                            <div className="flex items-center gap-2 w-full mt-4">
-                                                <button onClick={() => openInvoice(inv)} className="flex-1 bg-slate-800 text-white px-4 py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-lg active:scale-95">
-                                                    <FileText size={16} />
-                                                    <span>عرض</span>
-                                                </button>
-                                                {inv.status !== 'paid' && (
-                                                    <button onClick={() => {setPaymentForm({invoiceId: inv.id, amount: 0}); setIsPaymentModalOpen(true);}} className="flex-1 bg-emerald-500 text-white px-4 py-3 rounded-xl font-black text-sm flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95">
-                                                        <CircleDollarSign size={16} />
-                                                        <span>تسجيل دفعة</span>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                         {filteredInvoices.length === 0 && <div className="text-center py-20 professional-card"><p className="text-slate-400 italic">لا توجد فواتير مطابقة للبحث.</p></div>}
-                    </div>
-                    </div>
-
-                    {/* Right Column: Expense Management (form, summary, log) */}
-                    <div className="lg:col-span-4 space-y-8">
-                    {/* Add Expense Form */}
-                    <div className="professional-card p-6">
-                        <h3 className="font-black text-xl flex items-center gap-3 text-slate-900 mb-4 pb-3 border-b">
-                            <MinusCircle className="text-red-600" /> إضافة مصروف جديد
-                        </h3>
-                        <div className="p-0 space-y-5">
-                            <input value={expenseForm.description} onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} placeholder="وصف المصروف" required className="input-professional" />
-                            <div className="grid grid-cols-2 gap-4">
-                                <input type="number" value={expenseForm.amount || ''} onChange={e => setExpenseForm({...expenseForm, amount: parseFloat(e.target.value) || undefined})} placeholder="المبلغ" required className="input-professional tabular-nums" />
-                                <input type="date" value={new Date(expenseForm.date || Date.now()).toISOString().split('T')[0]} onChange={e => setExpenseForm({...expenseForm, date: new Date(e.target.value).getTime()})} className="input-professional" />
+                        
+                        {filteredInvoices.length === 0 ? (
+                            <div className="text-center py-20 professional-card">
+                                <FileText className="mx-auto text-slate-300 mb-4" size={64} />
+                                <p className="text-slate-400 font-bold text-lg">لا توجد فواتير مطابقة للبحث</p>
                             </div>
-                            <select value={expenseForm.category} onChange={e => setExpenseForm({...expenseForm, category: e.target.value as ExpenseCategory})} className="input-professional">
-                                {Object.entries(EXPENSE_CATEGORY_MAP).map(([key, value]) => (
-                                    <option key={key} value={key}>{value.label}</option>
-                                ))}
-                            </select>
-                            <button onClick={handleAddExpense} className="w-full bg-red-600 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:bg-red-700 transition-all">حفظ المصروف</button>
-                        </div>
-                    </div>
+                        ) : (
+                            <div className="professional-card p-0 overflow-hidden">
+                                <div className="overflow-x-auto rounded-2xl">
+                                    <table className="w-full border-collapse">
+                                        <thead className="sticky top-0 z-10 bg-gradient-to-r from-slate-100 to-slate-50">
+                                            <tr className="border-b-2 border-slate-300">
+                                                <th className="p-4 text-right font-black text-slate-700">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (sortField === 'invoiceNumber') {
+                                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                                                            } else {
+                                                                setSortField('invoiceNumber');
+                                                                setSortDirection('desc');
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                    >
+                                                        رقم الفاتورة
+                                                        {sortField === 'invoiceNumber' && (
+                                                            sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                                                        )}
+                                                    </button>
+                                                </th>
+                                                <th className="p-4 text-right font-black text-slate-700">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (sortField === 'customer') {
+                                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                                                            } else {
+                                                                setSortField('customer');
+                                                                setSortDirection('asc');
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                    >
+                                                        العميل
+                                                        {sortField === 'customer' && (
+                                                            sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                                                        )}
+                                                    </button>
+                                                </th>
+                                                <th className="p-4 text-right font-black text-slate-700">المنتج</th>
+                                                <th className="p-4 text-right font-black text-slate-700">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (sortField === 'issueDate') {
+                                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                                                            } else {
+                                                                setSortField('issueDate');
+                                                                setSortDirection('desc');
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                    >
+                                                        تاريخ الإصدار
+                                                        {sortField === 'issueDate' && (
+                                                            sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                                                        )}
+                                                    </button>
+                                                </th>
+                                                <th className="p-4 text-left font-black text-slate-700">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (sortField === 'status') {
+                                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                                                            } else {
+                                                                setSortField('status');
+                                                                setSortDirection('asc');
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                    >
+                                                        الحالة
+                                                        {sortField === 'status' && (
+                                                            sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                                                        )}
+                                                    </button>
+                                                </th>
+                                                <th className="p-4 text-left font-black text-slate-700">
+                                                    <button 
+                                                        onClick={() => {
+                                                            if (sortField === 'totalAmount') {
+                                                                setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                                                            } else {
+                                                                setSortField('totalAmount');
+                                                                setSortDirection('desc');
+                                                            }
+                                                        }}
+                                                        className="flex items-center gap-2 hover:text-blue-600 transition-colors"
+                                                    >
+                                                        الإجمالي
+                                                        {sortField === 'totalAmount' && (
+                                                            sortDirection === 'asc' ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+                                                        )}
+                                                    </button>
+                                                </th>
+                                                <th className="p-4 text-left font-black text-slate-700">المدفوع</th>
+                                                <th className="p-4 text-left font-black text-slate-700">المتبقي</th>
+                                                <th className="p-4 text-center font-black text-slate-700">الإجراءات</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredInvoices.map(inv => {
+                                                const customer = customers.find(c => c.id === inv.customerId);
+                                                const order = orders.find(o => o.id === inv.orderId);
+                                                if (!customer || !order) return null;
 
-                    {/* Financial Overview Card */}
-                    <div className='professional-card p-6 bg-slate-900 text-white border-slate-700'>
-                        <h3 className="text-lg font-black flex items-center gap-3 text-white mb-4 pb-3 border-b border-slate-700">
-                            <TrendingUp className="text-emerald-400" />
-                            نظرة مالية عامة
-                        </h3>
-                        <div className='grid grid-cols-2 gap-4'>
-                          <div className='bg-slate-800 p-4 rounded-lg'><p className='text-xs text-slate-400 font-bold'>إجمالي الإيرادات</p><p className='text-xl font-black text-emerald-400'>{formatCurrency(financials.totalRevenue)}</p></div>
-                          <div className='bg-slate-800 p-4 rounded-lg'><p className='text-xs text-slate-400 font-bold'>ديون مستحقة</p><p className='text-xl font-black text-amber-400'>{formatCurrency(financials.accountsReceivable)}</p></div>
-                          <div className='bg-slate-800 p-4 rounded-lg'><p className='text-xs text-slate-400 font-bold'>إجمالي المصروفات</p><p className='text-xl font-black text-red-400'>{formatCurrency(financials.totalExpenses)}</p></div>
-                          <div className='bg-slate-800 p-4 rounded-lg'><p className='text-xs font-bold text-slate-400'>صافي الربح</p><p className='text-xl font-black text-sky-400'>{formatCurrency(financials.netProfit)}</p></div>
+                                                const statusInfo = INVOICE_STATUS_MAP[inv.status];
+                                                const remainingBalance = (order.price || 0) - (order.paidAmount || 0);
+                                                const progress = order.price ? ((order.paidAmount || 0) / order.price) * 100 : 0;
+
+                                                return (
+                                                    <tr key={inv.id} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg flex-shrink-0 ${
+                                                                    statusInfo.bg + ' ' + statusInfo.color
+                                                                }`}>
+                                                                    #{inv.invoiceNumber}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600 font-black text-sm">
+                                                                    {customer.name.charAt(0)}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-black text-slate-900">{customer.name}</p>
+                                                                    <p className="text-xs text-slate-500 font-bold">{customer.phone}</p>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <p className="font-bold text-slate-800 text-sm">{order.productType}</p>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-2">
+                                                                <Calendar className="text-slate-400" size={14} />
+                                                                <p className="font-bold text-slate-700 text-sm tabular-nums">{new Date(inv.issueDate).toLocaleDateString('ar-LY')}</p>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <span className={`px-3 py-1.5 rounded-lg text-xs font-black inline-block ${statusInfo.bg} ${statusInfo.color}`}>
+                                                                {statusInfo.label}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <p className="font-black text-orange-600 text-lg tabular-nums">{formatCurrency(inv.totalAmount)}</p>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <p className="font-black text-emerald-600 text-lg tabular-nums">{formatCurrency(order.paidAmount || 0)}</p>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div>
+                                                                <p className="font-black text-red-600 text-lg tabular-nums mb-1">{formatCurrency(remainingBalance)}</p>
+                                                                <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                                                    <div className={`h-1.5 rounded-full ${statusInfo.bg.replace('bg-', 'bg-')}`} style={{ width: `${progress}%`}}></div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-4">
+                                                            <div className="flex items-center gap-2 justify-center">
+                                                                <button 
+                                                                    onClick={() => openInvoice(inv)} 
+                                                                    className="px-4 py-2 bg-slate-800 text-white rounded-lg font-black text-xs flex items-center gap-2 hover:bg-slate-900 transition-all shadow-lg active:scale-95"
+                                                                    title="عرض الفاتورة"
+                                                                >
+                                                                    <FileText size={14} />
+                                                                    عرض
+                                                                </button>
+                                                                {inv.status !== 'paid' && (
+                                                                    <button 
+                                                                        onClick={() => {setPaymentForm({invoiceId: inv.id, amount: 0}); setIsPaymentModalOpen(true);}} 
+                                                                        className="px-4 py-2 bg-emerald-500 text-white rounded-lg font-black text-xs flex items-center gap-2 hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
+                                                                        title="تسجيل دفعة"
+                                                                    >
+                                                                        <CircleDollarSign size={14} />
+                                                                        دفعة
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
                         </div>
-                    </div>
-                    {/* Expense Log List */}
-                    <div className="professional-card p-6">
-                        <h3 className="text-lg font-black flex items-center gap-3 text-slate-900 mb-4 pb-3 border-b">
-                            <Receipt className="text-red-600" />
-                            سجل المصروفات
-                        </h3>
-                        <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar pr-2">
-                            {expenses.map(exp => {
-                                const categoryInfo = EXPENSE_CATEGORY_MAP[exp.category];
-                                return (
-                                    <div key={exp.id} className="flex items-center gap-3 group p-2 rounded-lg hover:bg-slate-50">
-                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-${categoryInfo.color}-50 text-${categoryInfo.color}-600`}><categoryInfo.icon size={16} /></div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-bold text-xs text-slate-700 truncate">{exp.description}</p>
-                                            <p className="text-[10px] text-slate-400 font-bold">{new Date(exp.date).toLocaleDateString('ar-LY')}</p>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-black text-sm text-red-600 tabular-nums">{formatCurrency(exp.amount)}</span>
-                                            <button onClick={() => handleDeleteExpense(exp.id)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
-                                        </div>
+                        </div>
+                    )}
+
+                    {/* Expenses Sub Tab */}
+                    {activeTransactionsSubTab === 'expenses' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                            {/* Left Column: Add Expense Form */}
+                            <div className="lg:col-span-5">
+                                <div className="professional-card p-8 border-2 border-red-200 bg-gradient-to-br from-red-50/30 to-white">
+                                    <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-red-200">
+                                        <h2 className="text-2xl font-black text-slate-900 flex items-center gap-3">
+                                            <MinusCircle className="text-red-600" size={28} />
+                                            إضافة مصروف جديد
+                                        </h2>
+                                        <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                                     </div>
-                                );
-                            })}
-                            {expenses.length === 0 && <p className="text-center text-xs text-slate-400 py-8 italic">لا توجد مصروفات مسجلة.</p>}
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="block text-sm font-black text-slate-700 mb-2">وصف المصروف</label>
+                                            <input 
+                                                value={expenseForm.description} 
+                                                onChange={e => setExpenseForm({...expenseForm, description: e.target.value})} 
+                                                placeholder="مثال: شراء مواد خام" 
+                                                required 
+                                                className="input-professional" 
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-black text-slate-700 mb-2">المبلغ</label>
+                                                <input 
+                                                    type="number" 
+                                                    value={expenseForm.amount || ''} 
+                                                    onChange={e => setExpenseForm({...expenseForm, amount: parseFloat(e.target.value) || undefined})} 
+                                                    placeholder="0.00" 
+                                                    required 
+                                                    className="input-professional tabular-nums" 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-black text-slate-700 mb-2">التاريخ</label>
+                                                <input 
+                                                    type="date" 
+                                                    value={new Date(expenseForm.date || Date.now()).toISOString().split('T')[0]} 
+                                                    onChange={e => setExpenseForm({...expenseForm, date: new Date(e.target.value).getTime()})} 
+                                                    className="input-professional" 
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-black text-slate-700 mb-2">الفئة</label>
+                                            <select 
+                                                value={expenseForm.category} 
+                                                onChange={e => setExpenseForm({...expenseForm, category: e.target.value as ExpenseCategory})} 
+                                                className="input-professional"
+                                            >
+                                                {Object.entries(EXPENSE_CATEGORY_MAP).map(([key, value]) => (
+                                                    <option key={key} value={key}>{value.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <button 
+                                            onClick={handleAddExpense} 
+                                            className="w-full bg-red-600 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:bg-red-700 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <MinusCircle size={20} />
+                                            حفظ المصروف
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Right Column: Expense Log List */}
+                            <div className="lg:col-span-7">
+                                <div className="professional-card p-6">
+                                    <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-slate-200">
+                                        <h3 className="text-xl font-black flex items-center gap-3 text-slate-900">
+                                            <Receipt className="text-red-600" size={24} />
+                                            سجل المصروفات
+                                        </h3>
+                                        <span className="px-4 py-2 bg-red-100 text-red-700 rounded-xl font-black text-sm">
+                                            {expenses.length} مصروف
+                                        </span>
+                                    </div>
+                                    <div className="space-y-2 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+                                        {expenses.length === 0 ? (
+                                            <div className="text-center py-16">
+                                                <MinusCircle className="mx-auto text-slate-300 mb-4" size={64} />
+                                                <p className="text-slate-400 font-bold text-lg">لا توجد مصروفات مسجلة</p>
+                                                <p className="text-slate-300 text-sm mt-2">قم بإضافة مصروف جديد من النموذج</p>
+                                            </div>
+                                        ) : (
+                                            expenses.map(exp => {
+                                                const categoryInfo = EXPENSE_CATEGORY_MAP[exp.category];
+                                                const Icon = categoryInfo.icon;
+                                                const colorMap: Record<string, { bg: string; text: string }> = {
+                                                    stone: { bg: 'bg-stone-100', text: 'text-stone-600' },
+                                                    orange: { bg: 'bg-orange-100', text: 'text-orange-600' },
+                                                    blue: { bg: 'bg-blue-100', text: 'text-blue-600' },
+                                                    red: { bg: 'bg-red-100', text: 'text-red-600' },
+                                                    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-600' },
+                                                    amber: { bg: 'bg-amber-100', text: 'text-amber-600' },
+                                                    sky: { bg: 'bg-sky-100', text: 'text-sky-600' },
+                                                    violet: { bg: 'bg-violet-100', text: 'text-violet-600' },
+                                                    rose: { bg: 'bg-rose-100', text: 'text-rose-600' },
+                                                    slate: { bg: 'bg-slate-100', text: 'text-slate-600' }
+                                                };
+                                                const colors = colorMap[categoryInfo.color] || colorMap.stone;
+                                                return (
+                                                    <div key={exp.id} className="flex items-center gap-4 group p-4 rounded-xl border-2 border-slate-100 hover:border-red-200 hover:bg-red-50/50 transition-all">
+                                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${colors.bg} ${colors.text}`}>
+                                                            <Icon size={20} />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-black text-base text-slate-900 truncate">{exp.description}</p>
+                                                            <div className="flex items-center gap-2 mt-1.5">
+                                                                <span className={`px-2 py-1 rounded-lg text-xs font-black ${colors.bg} ${colors.text}`}>
+                                                                    {categoryInfo.label}
+                                                                </span>
+                                                                <span className="text-slate-300">•</span>
+                                                                <p className="text-xs text-slate-500 font-bold tabular-nums">{new Date(exp.date).toLocaleDateString('ar-LY')}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="font-black text-lg text-red-600 tabular-nums">{formatCurrency(exp.amount)}</span>
+                                                            <button 
+                                                                onClick={() => handleDeleteExpense(exp.id)} 
+                                                                className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                                                title="حذف المصروف"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    </div>
+                    )}
                 </div>
             )}
 
@@ -2647,348 +3974,575 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
                 </div>
             )}
 
-            {/* Receive Payment Tab */}
-            {activeAccountingTab === 'receive-payment' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <div className="professional-card p-6">
-                        <h3 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
-                            <CircleDollarSign className="text-green-600" size={28} />
-                            استلام دفعة من عميل
-                        </h3>
-                        <div className="space-y-5">
-                            <div>
-                                <label className="block text-sm font-black text-slate-700 mb-2">اختر العميل</label>
-                                <select 
-                                    value={receivePaymentForm.customerId} 
-                                    onChange={e => {
-                                        setReceivePaymentForm({...receivePaymentForm, customerId: e.target.value, orderId: ''});
-                                    }}
-                                    className="input-professional w-full"
-                                >
-                                    <option value="">اختر عميل</option>
-                                    {customers.map(customer => (
-                                        <option key={customer.id} value={customer.id}>{customer.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            {receivePaymentForm.customerId && (
-                                <div>
-                                    <label className="block text-sm font-black text-slate-700 mb-2">اختر المشروع/الطلب</label>
-                                    <select 
-                                        value={receivePaymentForm.orderId} 
-                                        onChange={e => setReceivePaymentForm({...receivePaymentForm, orderId: e.target.value})}
-                                        className="input-professional w-full"
-                                    >
-                                        <option value="">اختر طلب</option>
-                                        {orders.filter(o => o.customerId === receivePaymentForm.customerId && (o.price || 0) > (o.paidAmount || 0)).map(order => (
-                                            <option key={order.id} value={order.id}>
-                                                {order.productType} - المتبقي: {formatCurrency((order.price || 0) - (order.paidAmount || 0))}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-                            {receivePaymentForm.orderId && (
-                                <>
-                                    <div>
-                                        <label className="block text-sm font-black text-slate-700 mb-2">مبلغ الدفعة</label>
-                                        <input 
-                                            type="number" 
-                                            value={receivePaymentForm.amount || ''} 
-                                            onChange={e => setReceivePaymentForm({...receivePaymentForm, amount: parseFloat(e.target.value) || 0})}
-                                            placeholder="أدخل المبلغ"
-                                            className="input-professional tabular-nums text-center"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-black text-slate-700 mb-2">تاريخ الاستلام</label>
-                                        <input 
-                                            type="date" 
-                                            value={new Date(receivePaymentForm.paymentDate).toISOString().split('T')[0]} 
-                                            onChange={e => setReceivePaymentForm({...receivePaymentForm, paymentDate: new Date(e.target.value).getTime()})}
-                                            className="input-professional"
-                                        />
-                                    </div>
-                                    <div className="flex gap-3">
-                                        <button 
-                                            onClick={() => {
-                                                const order = orders.find(o => o.id === receivePaymentForm.orderId);
-                                                if (!order || receivePaymentForm.amount <= 0) {
-                                                    addToast("يرجى إدخال مبلغ صحيح.", 'error');
-                                                    return;
-                                                }
-                                                const newPaidAmount = (order.paidAmount || 0) + receivePaymentForm.amount;
-                                                if (newPaidAmount > (order.price || 0)) {
-                                                    addToast("المبلغ المدخل يتجاوز المبلغ المتبقي.", 'error');
-                                                    return;
-                                                }
-                                                setOrders(orders.map(o => 
-                                                    o.id === receivePaymentForm.orderId
-                                                        ? {...o, paidAmount: newPaidAmount}
-                                                        : o
-                                                ));
-                                                const invoice = invoices.find(inv => inv.orderId === receivePaymentForm.orderId);
-                                                if (invoice && newPaidAmount >= (order.price || 0)) {
-                                                    setInvoices(invoices.map(inv => 
-                                                        inv.id === invoice.id ? {...inv, status: 'paid'} : inv
-                                                    ));
-                                                }
-                                                addToast("تم تسجيل الدفعة بنجاح.", 'success');
-                                                setReceivePaymentForm({customerId: '', orderId: '', amount: 0, paymentDate: Date.now()});
-                                            }}
-                                            className="flex-1 bg-green-600 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:bg-green-700 transition-all"
-                                        >
-                                            تسجيل الدفعة
-                                        </button>
-                                        <button 
-                                            onClick={() => {
-                                                const order = orders.find(o => o.id === receivePaymentForm.orderId);
-                                                const customer = customers.find(c => c.id === receivePaymentForm.customerId);
-                                                if (!order || !customer || receivePaymentForm.amount <= 0) {
-                                                    addToast("يرجى إدخال جميع البيانات بشكل صحيح.", 'error');
-                                                    return;
-                                                }
-                                                const newPaidAmount = (order.paidAmount || 0) + receivePaymentForm.amount;
-                                                if (newPaidAmount > (order.price || 0)) {
-                                                    addToast("المبلغ المدخل يتجاوز المبلغ المتبقي.", 'error');
-                                                    return;
-                                                }
-                                                // تسجيل الدفعة
-                                                setOrders(orders.map(o => 
-                                                    o.id === receivePaymentForm.orderId
-                                                        ? {...o, paidAmount: newPaidAmount}
-                                                        : o
-                                                ));
-                                                const invoice = invoices.find(inv => inv.orderId === receivePaymentForm.orderId);
-                                                if (invoice && newPaidAmount >= (order.price || 0)) {
-                                                    setInvoices(invoices.map(inv => 
-                                                        inv.id === invoice.id ? {...inv, status: 'paid'} : inv
-                                                    ));
-                                                }
-                                                // طباعة إيصال الاستلام
-                                                const receiptWindow = window.open('', '_blank');
-                                                if (receiptWindow) {
-                                                    receiptWindow.document.write(`
-                                                        <!DOCTYPE html>
-                                                        <html dir="rtl" lang="ar">
-                                                        <head>
-                                                            <meta charset="UTF-8">
-                                                            <title>إيصال استلام - ${customer.name}</title>
-                                                            <style>
-                                                                * { margin: 0; padding: 0; box-sizing: border-box; }
-                                                                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; background: white; }
-                                                                .receipt { max-width: 800px; margin: 0 auto; background: white; }
-                                                                .header { border-bottom: 4px solid #059669; padding-bottom: 30px; margin-bottom: 30px; }
-                                                                .header-content { display: flex; justify-content: space-between; align-items: start; }
-                                                                .logo-section { display: flex; align-items: center; gap: 20px; }
-                                                                .logo-box { width: 80px; height: 80px; background: #059669; border-radius: 16px; display: flex; align-items: center; justify-content: center; color: white; font-size: 40px; }
-                                                                .company-info h1 { font-size: 36px; font-weight: 900; color: #1e293b; margin-bottom: 8px; }
-                                                                .company-info p { color: #475569; font-weight: bold; font-size: 16px; }
-                                                                .receipt-title { text-align: left; border-right: 4px solid #059669; padding-right: 24px; }
-                                                                .receipt-title h2 { font-size: 48px; font-weight: 900; color: #1e293b; margin-bottom: 8px; }
-                                                                .receipt-title p { color: #475569; font-weight: bold; }
-                                                                .info-section { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin: 30px 0; }
-                                                                .info-box { background: #f1f5f9; padding: 24px; border-radius: 12px; border: 2px solid #cbd5e1; }
-                                                                .info-box h3 { font-size: 16px; font-weight: 900; color: #334155; text-transform: uppercase; margin-bottom: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; }
-                                                                .info-box p { font-size: 20px; font-weight: 900; color: #1e293b; margin: 4px 0; }
-                                                                .amount-section { background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); padding: 40px; border-radius: 16px; border: 4px solid #059669; margin: 30px 0; text-align: center; }
-                                                                .amount-section p { font-size: 24px; font-weight: 900; color: #065f46; margin-bottom: 16px; }
-                                                                .amount-section .amount { font-size: 72px; font-weight: 900; color: #047857; }
-                                                                .footer { border-top: 4px solid #1e293b; padding-top: 30px; margin-top: 40px; text-align: center; }
-                                                                .footer p { font-weight: 900; color: #1e293b; margin: 8px 0; }
-                                                                @media print { body { padding: 20px; } }
-                                                            </style>
-                                                        </head>
-                                                        <body>
-                                                            <div class="receipt">
-                                                                <header class="header">
-                                                                    <div class="header-content">
-                                                                        <div class="logo-section">
-                                                                            <div class="logo-box">D</div>
-                                                                            <div class="company-info">
-                                                                                <h1>مصنع ديكورا</h1>
-                                                                                <p>للأثاث والمطابخ والديكور</p>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div class="receipt-title">
-                                                                            <h2>إيصال استلام</h2>
-                                                                            <p>التاريخ: ${new Date(receivePaymentForm.paymentDate).toLocaleDateString('ar-LY')}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </header>
-                                                                <section class="info-section">
-                                                                    <div class="info-box">
-                                                                        <h3>استلمنا من:</h3>
-                                                                        <p>${customer.name}</p>
-                                                                        <p style="font-size: 14px; color: #64748b;">${customer.address}</p>
-                                                                        <p style="font-size: 14px; color: #64748b;">${customer.phone}</p>
-                                                                    </div>
-                                                                    <div class="info-box">
-                                                                        <h3>معلومات الدفعة:</h3>
-                                                                        <p>${order.productType}</p>
-                                                                        ${invoice ? `<p style="font-size: 14px; color: #64748b;">فاتورة رقم: #${invoice.invoiceNumber}</p>` : ''}
-                                                                    </div>
-                                                                </section>
-                                                                <section class="amount-section">
-                                                                    <p>مبلغ الدفعة</p>
-                                                                    <div class="amount">${formatCurrency(receivePaymentForm.amount)}</div>
-                                                                </section>
-                                                                <footer class="footer">
-                                                                    <p>شكراً لدفعكم</p>
-                                                                    <p style="font-size: 14px; color: #64748b;">مصنع ديكورا - بنغازي</p>
-                                                                </footer>
-                                                            </div>
-                                                        </body>
-                                                        </html>
-                                                    `);
-                                                    receiptWindow.document.close();
-                                                    setTimeout(() => receiptWindow.print(), 500);
-                                                }
-                                                addToast("تم تسجيل الدفعة وطباعة الإيصال.", 'success');
-                                                setReceivePaymentForm({customerId: '', orderId: '', amount: 0, paymentDate: Date.now()});
-                                            }}
-                                            className="px-6 bg-emerald-600 text-white py-4 rounded-xl font-black text-sm shadow-xl hover:bg-emerald-700 transition-all flex items-center gap-2"
-                                        >
-                                            <Printer size={18} />
-                                            تسجيل وطباعة
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                    <div className="professional-card p-6">
-                        <h3 className="text-xl font-black text-slate-900 mb-4">الملخص</h3>
-                        {receivePaymentForm.customerId && receivePaymentForm.orderId && (() => {
-                            const order = orders.find(o => o.id === receivePaymentForm.orderId);
-                            const customer = customers.find(c => c.id === receivePaymentForm.customerId);
-                            if (!order || !customer) return null;
-                            const remaining = (order.price || 0) - (order.paidAmount || 0);
-                            return (
-                                <div className="space-y-4">
-                                    <div className="p-4 bg-slate-50 rounded-lg">
-                                        <p className="text-sm font-bold text-slate-600">العميل</p>
-                                        <p className="font-black text-lg">{customer.name}</p>
-                                    </div>
-                                    <div className="p-4 bg-slate-50 rounded-lg">
-                                        <p className="text-sm font-bold text-slate-600">المشروع</p>
-                                        <p className="font-black text-lg">{order.productType}</p>
-                                    </div>
-                                    <div className="p-4 bg-red-50 rounded-lg border-2 border-red-200">
-                                        <p className="text-sm font-bold text-slate-600">المبلغ الإجمالي</p>
-                                        <p className="font-black text-2xl text-red-600">{formatCurrency(order.price || 0)}</p>
-                                    </div>
-                                    <div className="p-4 bg-emerald-50 rounded-lg border-2 border-emerald-200">
-                                        <p className="text-sm font-bold text-slate-600">المدفوع</p>
-                                        <p className="font-black text-2xl text-emerald-600">{formatCurrency(order.paidAmount || 0)}</p>
-                                    </div>
-                                    <div className="p-4 bg-amber-50 rounded-lg border-2 border-amber-200">
-                                        <p className="text-sm font-bold text-slate-600">المتبقي</p>
-                                        <p className="font-black text-2xl text-amber-600">{formatCurrency(remaining)}</p>
-                                    </div>
-                                    {receivePaymentForm.amount > 0 && (
-                                        <div className="p-4 bg-blue-50 rounded-lg border-2 border-blue-200">
-                                            <p className="text-sm font-bold text-slate-600">الدفعة الجديدة</p>
-                                            <p className="font-black text-2xl text-blue-600">{formatCurrency(receivePaymentForm.amount)}</p>
-                                            <p className="text-xs text-slate-500 mt-2">المتبقي بعد الدفعة: {formatCurrency(remaining - receivePaymentForm.amount)}</p>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()}
-                    </div>
-                </div>
+            {/* Cash Receipt Tab */}
+            {activeAccountingTab === 'cash-receipt' && (
+                <CashReceiptView 
+                    invoices={invoices}
+                    customers={customers}
+                    orders={orders}
+                    paymentReceipts={paymentReceipts}
+                    setPaymentReceipts={setPaymentReceipts}
+                    setInvoices={setInvoices}
+                    setOrders={setOrders}
+                    addToast={addToast}
+                    productsConfig={productsConfig}
+                    companyLogo={companyLogo}
+                />
+            )}
+
+            {/* Receipts Archive Tab */}
+            {activeAccountingTab === 'receipts-archive' && (
+                <ReceiptsArchiveView 
+                    paymentReceipts={paymentReceipts}
+                    customers={customers}
+                    invoices={invoices}
+                    orders={orders}
+                    productsConfig={productsConfig}
+                    companyLogo={companyLogo}
+                />
             )}
 
             {/* Customer Statements Tab */}
             {activeAccountingTab === 'statements' && (
                 <div className="space-y-6">
                     <div className="professional-card p-6">
-                        <h3 className="text-xl font-black text-slate-900 mb-4 flex items-center gap-3">
-                            <FileSpreadsheet className="text-violet-600" size={24} />
+                        <h3 className="text-2xl font-black text-slate-900 mb-6 flex items-center gap-3">
+                            <FileSpreadsheet className="text-violet-600" size={28} />
                             كشف حساب العميل
                         </h3>
-                        <select 
-                            value={selectedCustomerForStatement} 
-                            onChange={e => setSelectedCustomerForStatement(e.target.value)}
-                            className="input-professional w-full">
-                            <option value="">اختر عميل لعرض كشف حسابه</option>
-                            {customers.map(customer => (
-                                <option key={customer.id} value={customer.id}>{customer.name}</option>
-                            ))}
-                        </select>
+                        
+                        {/* Customer Search */}
+                        <div className="relative">
+                            <label className="block text-sm font-black text-slate-700 mb-2">ابحث عن العميل</label>
+                            <div className="relative">
+                                <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                                <input
+                                    type="text"
+                                    value={customerSearchForStatement}
+                                    onChange={e => {
+                                        setCustomerSearchForStatement(e.target.value);
+                                        if (!e.target.value.trim()) {
+                                            setSelectedCustomerForStatement('');
+                                        }
+                                    }}
+                                    placeholder="اكتب اسم العميل، رقم الهاتف، أو العنوان..."
+                                    className="input-professional !py-4 !pr-12 !text-base w-full"
+                                />
+                            </div>
+                            
+                            {/* Customer Search Results */}
+                            {customerSearchForStatement.trim() && !selectedCustomerForStatement && filteredCustomersForStatement.length > 0 && (
+                                <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-2xl border-2 border-slate-200 max-h-96 overflow-y-auto custom-scrollbar">
+                                    {filteredCustomersForStatement.map(customer => {
+                                        const customerOrders = orders.filter(o => o.customerId === customer.id);
+                                        const totalDue = customerOrders.reduce((sum, o) => sum + (o.price || 0), 0);
+                                        const totalPaid = customerOrders.reduce((sum, o) => sum + (o.paidAmount || 0), 0);
+                                        const remaining = totalDue - totalPaid;
+                                        return (
+                                            <button
+                                                key={customer.id}
+                                                onClick={() => {
+                                                    setSelectedCustomerForStatement(customer.id);
+                                                    setCustomerSearchForStatement(customer.name);
+                                                }}
+                                                className="w-full p-4 hover:bg-violet-50 transition-all text-right border-b border-slate-100 last:border-b-0 group"
+                                            >
+                                                <div className="flex items-center justify-between gap-4">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-3 mb-1">
+                                                            <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl flex items-center justify-center text-white font-black text-lg">
+                                                                {customer.name.charAt(0)}
+                                                            </div>
+                                                            <div>
+                                                                <p className="font-black text-lg text-slate-900 group-hover:text-violet-600 transition-colors">
+                                                                    {customer.name}
+                                                                </p>
+                                                                <p className="text-xs text-slate-500 font-bold mt-0.5">
+                                                                    {customer.phone}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        {customer.address && (
+                                                            <p className="text-xs text-slate-400 pr-13 mt-1">{customer.address}</p>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-1">
+                                                        <span className={`px-3 py-1 rounded-lg text-xs font-black ${
+                                                            remaining > 0 
+                                                                ? 'bg-amber-100 text-amber-700' 
+                                                                : remaining < 0
+                                                                ? 'bg-emerald-100 text-emerald-700'
+                                                                : 'bg-slate-100 text-slate-700'
+                                                        }`}>
+                                                            {remaining > 0 ? 'مستحق عليه' : remaining < 0 ? 'رصيد له' : 'مكتمل'}
+                                                        </span>
+                                                        <span className="text-xs text-slate-600 font-black tabular-nums">
+                                                            {formatCurrency(Math.abs(remaining))}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            
+                            {customerSearchForStatement.trim() && !selectedCustomerForStatement && filteredCustomersForStatement.length === 0 && (
+                                <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-xl border-2 border-slate-200 p-6 text-center">
+                                    <User className="mx-auto text-slate-300 mb-3" size={48} />
+                                    <p className="text-slate-400 font-bold">لا توجد نتائج للبحث</p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Selected Customer Info */}
+                        {selectedCustomerForStatement && customerStatements && (
+                            <div className="mt-4 p-5 bg-gradient-to-br from-violet-50 to-purple-50 rounded-2xl border-2 border-violet-200">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 bg-gradient-to-br from-violet-500 to-violet-600 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-lg">
+                                        {customers.find(c => c.id === selectedCustomerForStatement)?.name.charAt(0)}
+                                    </div>
+                                    <div className="flex-1">
+                                        <h4 className="font-black text-xl text-slate-900">
+                                            {customers.find(c => c.id === selectedCustomerForStatement)?.name}
+                                        </h4>
+                                        <p className="text-sm text-slate-600 font-bold mt-1">
+                                            {customers.find(c => c.id === selectedCustomerForStatement)?.phone}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => {
+                                            setSelectedCustomerForStatement('');
+                                            setCustomerSearchForStatement('');
+                                        }}
+                                        className="p-2 hover:bg-white/50 rounded-lg transition-all"
+                                    >
+                                        <X size={20} className="text-slate-500" />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {customerStatements && (
                         <div className="professional-card p-8">
-                            <div className="mb-6 pb-4 border-b-2 border-slate-200">
-                                <h4 className="text-2xl font-black text-slate-900">
-                                    كشف حساب: {customers.find(c => c.id === selectedCustomerForStatement)?.name}
-                                </h4>
-                                <p className="text-slate-500 font-bold mt-1">
-                                    {customers.find(c => c.id === selectedCustomerForStatement)?.phone} | 
-                                    {customers.find(c => c.id === selectedCustomerForStatement)?.address}
-                                </p>
+                            <div className="mb-6 pb-6 border-b-2 border-slate-200">
+                                <div className="flex items-center justify-between flex-wrap gap-4">
+                                    <div>
+                                        <h4 className="text-3xl font-black text-slate-900 mb-2">
+                                            كشف حساب: {customers.find(c => c.id === selectedCustomerForStatement)?.name}
+                                        </h4>
+                                        <div className="flex items-center gap-4 text-slate-600 font-bold">
+                                            <div className="flex items-center gap-2">
+                                                <Phone size={16} />
+                                                <span>{customers.find(c => c.id === selectedCustomerForStatement)?.phone}</span>
+                                            </div>
+                                            {customers.find(c => c.id === selectedCustomerForStatement)?.address && (
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin size={16} />
+                                                    <span>{customers.find(c => c.id === selectedCustomerForStatement)?.address}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`px-6 py-3 rounded-xl font-black text-lg ${
+                                            customerStatements.remaining > 0 
+                                                ? 'bg-amber-100 text-amber-700' 
+                                                : customerStatements.remaining < 0
+                                                ? 'bg-emerald-100 text-emerald-700'
+                                                : 'bg-slate-100 text-slate-700'
+                                        }`}>
+                                            {customerStatements.remaining > 0 ? 'مستحق عليه' : customerStatements.remaining < 0 ? 'رصيد له' : 'مكتمل'}
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (!customerStatements || !selectedCustomerForStatement) return;
+                                                const customer = customers.find(c => c.id === selectedCustomerForStatement);
+                                                if (!customer) return;
+
+                                                const statementHtml = `
+                                                    <!DOCTYPE html>
+                                                    <html lang="ar" dir="rtl">
+                                                    <head>
+                                                        <meta charset="UTF-8">
+                                                        <title>كشف حساب - ${customer.name}</title>
+                                                        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+                                                        <style>
+                                                            * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; margin: 0; padding: 0; box-sizing: border-box; }
+                                                            body { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; padding: 2rem; color: #111827; background: #fff; }
+                                                            .container { max-width: 1000px; margin: 0 auto; }
+                                                            .header { border-bottom: 4px solid #7c3aed; padding-bottom: 1.5rem; margin-bottom: 2rem; }
+                                                            .header-content { display: flex; justify-content: space-between; align-items: start; gap: 2rem; }
+                                                            .logo-section { display: flex; align-items: center; gap: 1rem; }
+                                                            .logo-box { width: 64px; height: 64px; background: #7c3aed; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 32px; font-weight: 900; }
+                                                            .company-info h1 { font-size: 28px; font-weight: 900; color: #0f172a; margin-bottom: 0.5rem; }
+                                                            .company-info p { color: #475569; font-weight: 700; font-size: 14px; }
+                                                            .statement-title { text-align: left; border-right: 4px solid #7c3aed; padding-right: 1.5rem; }
+                                                            .statement-title h2 { font-size: 36px; font-weight: 900; color: #0f172a; margin-bottom: 0.5rem; }
+                                                            .statement-title p { color: #475569; font-weight: 700; font-size: 14px; }
+                                                            .customer-info { background: #f8fafc; padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0; border: 2px solid #e2e8f0; }
+                                                            .customer-info h3 { font-size: 20px; font-weight: 900; color: #1e293b; margin-bottom: 1rem; }
+                                                            .customer-info p { font-size: 16px; font-weight: 700; color: #475569; margin: 0.5rem 0; }
+                                                            .summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 2rem 0; }
+                                                            .summary-card { padding: 1.5rem; border-radius: 12px; border: 2px solid; text-align: center; }
+                                                            .summary-card.debit { background: #eff6ff; border-color: #3b82f6; }
+                                                            .summary-card.credit { background: #ecfdf5; border-color: #10b981; }
+                                                            .summary-card.remaining { background: ${customerStatements.remaining > 0 ? '#fef3c7' : customerStatements.remaining < 0 ? '#f1f5f9' : '#ecfdf5'}; border-color: ${customerStatements.remaining > 0 ? '#f59e0b' : customerStatements.remaining < 0 ? '#64748b' : '#10b981'}; }
+                                                            .summary-card h4 { font-size: 12px; font-weight: 900; color: #475569; margin-bottom: 0.75rem; text-transform: uppercase; }
+                                                            .summary-card .value { font-size: 28px; font-weight: 900; }
+                                                            .summary-card.due .value { color: #2563eb; }
+                                                            .summary-card.paid .value { color: #059669; }
+                                                            .summary-card.remaining .value { color: ${customerStatements.remaining > 0 ? '#d97706' : customerStatements.remaining < 0 ? '#475569' : '#059669'}; }
+                                                            table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 2rem 0; table-layout: fixed; }
+                                                            th, td { padding: 1rem; border-bottom: 2px solid #e5e7eb; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.6; }
+                                                            th { font-weight: 800; background-color: #f3f4f6; color: #374151; text-align: right; }
+                                                            td { font-weight: 700; }
+                                                            .due-col { text-align: left; color: #dc2626; font-weight: 900; }
+                                                            .paid-col { text-align: left; color: #059669; font-weight: 900; }
+                                                            .remaining-col { text-align: left; color: #1e293b; font-weight: 900; }
+                                                            tfoot tr { background: #f3f4f6; font-weight: 900; border-top: 3px solid #374151; }
+                                                            tfoot td { padding: 1rem; }
+                                                            .footer { border-top: 4px solid #1e293b; padding-top: 1.5rem; margin-top: 2rem; text-align: center; }
+                                                            .footer p { font-weight: 900; color: #1e293b; margin: 0.5rem 0; }
+                                                            @media print { body { padding: 1rem; } }
+                                                        </style>
+                                                    </head>
+                                                    <body>
+                                                        <div class="container">
+                                                            <header class="header">
+                                                                <div class="header-content">
+                                                                    <div class="logo-section">
+                                                                        <div class="logo-box">D</div>
+                                                                        <div class="company-info">
+                                                                            <h1>مصنع ديكورا</h1>
+                                                                            <p>للأثاث والمطابخ والديكور</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="statement-title">
+                                                                        <h2>كشف حساب</h2>
+                                                                        <p>تاريخ الإصدار: ${new Date().toLocaleDateString('ar-LY', { dateStyle: 'full' })}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </header>
+
+                                                            <div class="customer-info">
+                                                                <h3>معلومات العميل</h3>
+                                                                <p><strong>الاسم:</strong> ${customer.name}</p>
+                                                                <p><strong>رقم الهاتف:</strong> ${customer.phone}</p>
+                                                                ${customer.address ? `<p><strong>العنوان:</strong> ${customer.address}</p>` : ''}
+                                                            </div>
+
+                                                            <div class="summary-grid">
+                                                                <div class="summary-card due">
+                                                                    <h4>إجمالي المستحقات</h4>
+                                                                    <div class="value">${formatCurrency(customerStatements.totalDue)}</div>
+                                                                </div>
+                                                                <div class="summary-card paid">
+                                                                    <h4>إجمالي المدفوع</h4>
+                                                                    <div class="value">${formatCurrency(customerStatements.totalPaid)}</div>
+                                                                </div>
+                                                                <div class="summary-card remaining">
+                                                                    <h4>المتبقي</h4>
+                                                                    <div class="value">${formatCurrency(Math.abs(customerStatements.remaining))}</div>
+                                                                    <p style="font-size: 12px; margin-top: 0.5rem; color: #64748b;">${customerStatements.remaining > 0 ? '(مستحق عليه)' : customerStatements.remaining < 0 ? '(رصيد له)' : '(مكتمل)'}</p>
+                                                                </div>
+                                                            </div>
+
+                                                            <table>
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th style="width: 15%;">التاريخ</th>
+                                                                        <th style="width: 35%;">الوصف</th>
+                                                                        <th style="width: 15%;">المستحقات</th>
+                                                                        <th style="width: 15%;">المدفوع</th>
+                                                                        <th style="width: 20%;">المتبقي</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    ${customerStatements.customerOrders.flatMap((order, orderIndex) => {
+                                                                        const prodName = productsConfig[order.productType]?.name || order.productType;
+                                                                        const transactions: Array<{date: number, desc: string, debit: number, credit: number}> = [];
+                                                                        if (order.price && order.price > 0) {
+                                                                            transactions.push({
+                                                                                date: order.orderDate,
+                                                                                desc: `فاتورة - ${prodName}`,
+                                                                                debit: order.price,
+                                                                                credit: 0
+                                                                            });
+                                                                        }
+                                                                        if (order.paidAmount && order.paidAmount > 0) {
+                                                                            transactions.push({
+                                                                                date: order.orderDate,
+                                                                                desc: `دفعة - ${prodName}`,
+                                                                                debit: 0,
+                                                                                credit: order.paidAmount
+                                                                            });
+                                                                        }
+                                                                        return transactions.map((trans, idx) => {
+                                                                            const runningBalance = customerStatements.customerOrders.slice(0, orderIndex).reduce((sum, o) => sum + (o.price || 0) - (o.paidAmount || 0), 0) + 
+                                                                                (idx === 0 ? trans.debit - trans.credit : 0);
+                                                                            return `
+                                                                                <tr>
+                                                                                    <td>${new Date(trans.date).toLocaleDateString('ar-LY')}</td>
+                                                                                    <td>${trans.desc}</td>
+                                                                                    <td class="due-col">${trans.debit > 0 ? formatCurrency(trans.debit) : '-'}</td>
+                                                                                    <td class="paid-col">${trans.credit > 0 ? formatCurrency(trans.credit) : '-'}</td>
+                                                                                    <td class="remaining-col">${formatCurrency(runningBalance + (idx === 1 ? -trans.credit : 0))}</td>
+                                                                                </tr>
+                                                                            `;
+                                                                        }).join('');
+                                                                    }).join('')}
+                                                                </tbody>
+                                                                <tfoot>
+                                                                    <tr>
+                                                                        <td colspan="2" style="text-align: right; font-weight: 900;">المجموع</td>
+                                                                        <td class="due-col">${formatCurrency(customerStatements.totalDue)}</td>
+                                                                        <td class="paid-col">${formatCurrency(customerStatements.totalPaid)}</td>
+                                                                        <td class="remaining-col">${formatCurrency(customerStatements.remaining)}</td>
+                                                                    </tr>
+                                                                </tfoot>
+                                                            </table>
+
+                                                            <footer class="footer">
+                                                                <p>شكراً لتعاونكم</p>
+                                                                <p style="font-size: 12px; color: #64748b;">مصنع ديكورا - بنغازي</p>
+                                                            </footer>
+                                                        </div>
+                                                    </body>
+                                                    </html>
+                                                `;
+
+                                                const element = document.createElement('div');
+                                                element.innerHTML = statementHtml;
+                                                document.body.appendChild(element);
+
+                                                const opt = {
+                                                    margin: 0.5,
+                                                    filename: `كشف_حساب_${customer.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+                                                    image: { type: 'png' as const, quality: 1 },
+                                                    html2canvas: { 
+                                                        scale: 3, 
+                                                        useCORS: true,
+                                                        letterRendering: true,
+                                                        logging: false,
+                                                        allowTaint: false,
+                                                        backgroundColor: '#ffffff'
+                                                    },
+                                                    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' as const }
+                                                };
+
+                                                html2pdf().from(element).set(opt).save().then(() => {
+                                                    document.body.removeChild(element);
+                                                    addToast("تم تصدير كشف الحساب بنجاح.", 'success');
+                                                }).catch((err: any) => {
+                                                    document.body.removeChild(element);
+                                                    console.error('PDF export error:', err);
+                                                    addToast("حدث خطأ أثناء تصدير PDF.", 'error');
+                                                });
+                                            }}
+                                            className="bg-violet-600 text-white px-6 py-3 rounded-xl font-black text-sm flex items-center gap-2 shadow-xl hover:bg-violet-700 transition-all active:scale-95"
+                                        >
+                                            <Printer size={18} />
+                                            تصدير PDF
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                                    <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
-                                        <p className="text-xs font-bold text-slate-600 mb-1">إجمالي المدين</p>
-                                        <p className="text-2xl font-black text-blue-600 tabular-nums">{formatCurrency(customerStatements.totalDebit)}</p>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                                    {/* إجمالي المستحقات */}
+                                    <div className="group relative bg-white p-4 rounded-2xl border border-blue-200/50 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-transparent rounded-full blur-2xl"></div>
+                                        <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-blue-400/5 to-transparent rounded-full blur-xl"></div>
+                                        <div className="relative">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md shadow-blue-500/30 group-hover:scale-110 transition-transform duration-300">
+                                                        <TrendingUp className="text-white" size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">إجمالي المستحقات</p>
+                                                        <div className="h-0.5 w-10 bg-gradient-to-r from-blue-500 to-blue-400 rounded-full mt-1"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4">
+                                                <p className="text-2xl font-black text-slate-900 tabular-nums mb-1 group-hover:text-blue-600 transition-colors duration-300">
+                                                    {formatCurrency(customerStatements.totalDue)}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-1.5">
+                                                    <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+                                                    <p className="text-xs font-bold text-slate-400">جميع الفواتير</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="bg-emerald-50 p-4 rounded-lg border-2 border-emerald-200">
-                                        <p className="text-xs font-bold text-slate-600 mb-1">إجمالي الدائن</p>
-                                        <p className="text-2xl font-black text-emerald-600 tabular-nums">{formatCurrency(customerStatements.totalCredit)}</p>
+
+                                    {/* إجمالي المدفوع */}
+                                    <div className="group relative bg-white p-4 rounded-2xl border border-emerald-200/50 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full blur-2xl"></div>
+                                        <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-tr from-emerald-400/5 to-transparent rounded-full blur-xl"></div>
+                                        <div className="relative">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md shadow-emerald-500/30 group-hover:scale-110 transition-transform duration-300">
+                                                        <CircleDollarSign className="text-white" size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">إجمالي المدفوع</p>
+                                                        <div className="h-0.5 w-10 bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full mt-1"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4">
+                                                <p className="text-2xl font-black text-slate-900 tabular-nums mb-1 group-hover:text-emerald-600 transition-colors duration-300">
+                                                    {formatCurrency(customerStatements.totalPaid)}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-1.5">
+                                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                                                    <p className="text-xs font-bold text-slate-400">المبالغ المستلمة</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className={`p-4 rounded-lg border-2 ${customerStatements.balance >= 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                                        <p className="text-xs font-bold text-slate-600 mb-1">الرصيد</p>
-                                        <p className={`text-2xl font-black tabular-nums ${customerStatements.balance >= 0 ? 'text-amber-600' : 'text-slate-600'}`}>
-                                            {formatCurrency(Math.abs(customerStatements.balance))} {customerStatements.balance >= 0 ? '(مدين)' : '(دائن)'}
-                                        </p>
+
+                                    {/* المتبقي */}
+                                    <div className={`group relative bg-white p-4 rounded-2xl border shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden ${
+                                        customerStatements.remaining > 0 
+                                            ? 'border-amber-200/50' 
+                                            : customerStatements.remaining < 0
+                                            ? 'border-slate-200/50'
+                                            : 'border-emerald-200/50'
+                                    }`}>
+                                        <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl ${
+                                            customerStatements.remaining > 0 
+                                                ? 'bg-gradient-to-br from-amber-500/10 to-transparent' 
+                                                : customerStatements.remaining < 0
+                                                ? 'bg-gradient-to-br from-slate-500/10 to-transparent'
+                                                : 'bg-gradient-to-br from-emerald-500/10 to-transparent'
+                                        }`}></div>
+                                        <div className={`absolute bottom-0 left-0 w-16 h-16 rounded-full blur-xl ${
+                                            customerStatements.remaining > 0 
+                                                ? 'bg-gradient-to-tr from-amber-400/5 to-transparent' 
+                                                : customerStatements.remaining < 0
+                                                ? 'bg-gradient-to-tr from-slate-400/5 to-transparent'
+                                                : 'bg-gradient-to-tr from-emerald-400/5 to-transparent'
+                                        }`}></div>
+                                        <div className="relative">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300 ${
+                                                        customerStatements.remaining > 0 
+                                                            ? 'bg-gradient-to-br from-amber-500 to-amber-600 shadow-amber-500/30' 
+                                                            : customerStatements.remaining < 0
+                                                            ? 'bg-gradient-to-br from-slate-500 to-slate-600 shadow-slate-500/30'
+                                                            : 'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-emerald-500/30'
+                                                    }`}>
+                                                        <Scale className="text-white" size={20} />
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-black text-slate-500 uppercase tracking-wider">المتبقي</p>
+                                                        <div className={`h-0.5 w-10 rounded-full mt-1 ${
+                                                            customerStatements.remaining > 0 
+                                                                ? 'bg-gradient-to-r from-amber-500 to-amber-400' 
+                                                                : customerStatements.remaining < 0
+                                                                ? 'bg-gradient-to-r from-slate-500 to-slate-400'
+                                                                : 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                                                        }`}></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="mt-4">
+                                                <p className={`text-2xl font-black tabular-nums mb-1 transition-colors duration-300 ${
+                                                    customerStatements.remaining > 0 
+                                                        ? 'text-slate-900 group-hover:text-amber-600' 
+                                                        : customerStatements.remaining < 0
+                                                        ? 'text-slate-900 group-hover:text-slate-600'
+                                                        : 'text-slate-900 group-hover:text-emerald-600'
+                                                }`}>
+                                                    {formatCurrency(Math.abs(customerStatements.remaining))}
+                                                </p>
+                                                <div className="flex items-center gap-2 mt-1.5">
+                                                    <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                                                        customerStatements.remaining > 0 
+                                                            ? 'bg-amber-500' 
+                                                            : customerStatements.remaining < 0
+                                                            ? 'bg-slate-500'
+                                                            : 'bg-emerald-500'
+                                                    }`}></div>
+                                                    <p className={`text-xs font-black ${
+                                                        customerStatements.remaining > 0 
+                                                            ? 'text-amber-600' 
+                                                            : customerStatements.remaining < 0
+                                                            ? 'text-slate-600'
+                                                            : 'text-emerald-600'
+                                                    }`}>
+                                                        {customerStatements.remaining > 0 ? 'مستحق عليه' : customerStatements.remaining < 0 ? 'رصيد له' : 'مكتمل'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <h5 className="text-lg font-black text-slate-800 mb-4">تفاصيل المعاملات:</h5>
-                                    <div className="overflow-x-auto">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center">
+                                            <FileSpreadsheet className="text-violet-600" size={20} />
+                                        </div>
+                                        <h5 className="text-xl font-black text-slate-900">تفاصيل المعاملات</h5>
+                                    </div>
+                                    <div className="overflow-x-auto rounded-2xl border-2 border-slate-200">
                                         <table className="w-full border-collapse">
                                             <thead>
-                                                <tr className="bg-slate-100 border-b-2 border-slate-300">
+                                                <tr className="bg-gradient-to-r from-slate-100 to-slate-50 border-b-2 border-slate-300">
                                                     <th className="p-4 text-right font-black text-slate-700">التاريخ</th>
                                                     <th className="p-4 text-right font-black text-slate-700">الوصف</th>
-                                                    <th className="p-4 text-left font-black text-slate-700">مدين</th>
-                                                    <th className="p-4 text-left font-black text-slate-700">دائن</th>
-                                                    <th className="p-4 text-left font-black text-slate-700">الرصيد</th>
+                                                    <th className="p-4 text-left font-black text-slate-700">المستحقات</th>
+                                                    <th className="p-4 text-left font-black text-slate-700">المدفوع</th>
+                                                    <th className="p-4 text-left font-black text-slate-700">المتبقي</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {customerStatements.customerOrders.flatMap((order, orderIndex) => {
-                                                    const transactions: Array<{date: number, desc: string, debit: number, credit: number}> = [];
+                                                    const prodName = productsConfig[order.productType]?.name || order.productType;
+                                                    const transactions: Array<{date: number, desc: string, debit: number, credit: number, type: 'invoice' | 'payment'}> = [];
                                                     if (order.price && order.price > 0) {
                                                         transactions.push({
                                                             date: order.orderDate,
-                                                            desc: `فاتورة - ${order.productType}`,
+                                                            desc: `فاتورة - ${prodName}`,
                                                             debit: order.price,
-                                                            credit: 0
+                                                            credit: 0,
+                                                            type: 'invoice'
                                                         });
                                                     }
                                                     if (order.paidAmount && order.paidAmount > 0) {
-                                                        // نضيف دفعات متعددة كسطور منفصلة (يمكن تحسينها لاحقاً)
                                                         transactions.push({
                                                             date: order.orderDate,
-                                                            desc: `دفعة - ${order.productType}`,
+                                                            desc: `دفعة - ${prodName}`,
                                                             debit: 0,
-                                                            credit: order.paidAmount
+                                                            credit: order.paidAmount,
+                                                            type: 'payment'
                                                         });
                                                     }
                                                     return transactions.map((trans, idx) => {
                                                         const runningBalance = customerStatements.customerOrders.slice(0, orderIndex).reduce((sum, o) => sum + (o.price || 0) - (o.paidAmount || 0), 0) + 
                                                             (idx === 0 ? trans.debit - trans.credit : 0);
                                                         return (
-                                                            <tr key={`${order.id}-${idx}`} className="border-b border-slate-200 hover:bg-slate-50">
+                                                            <tr key={`${order.id}-${idx}`} className="border-b border-slate-200 hover:bg-slate-50 transition-colors">
                                                                 <td className="p-4 text-sm font-bold text-slate-700 tabular-nums">{new Date(trans.date).toLocaleDateString('ar-LY')}</td>
-                                                                <td className="p-4 font-bold text-slate-800">{trans.desc}</td>
+                                                                <td className="p-4">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {trans.type === 'invoice' ? (
+                                                                            <FileText className="text-blue-500" size={16} />
+                                                                        ) : (
+                                                                            <CircleDollarSign className="text-emerald-500" size={16} />
+                                                                        )}
+                                                                        <span className="font-bold text-slate-800">{trans.desc}</span>
+                                                                    </div>
+                                                                </td>
                                                                 <td className="p-4 text-left font-black text-red-600 tabular-nums">{trans.debit > 0 ? formatCurrency(trans.debit) : '-'}</td>
                                                                 <td className="p-4 text-left font-black text-emerald-600 tabular-nums">{trans.credit > 0 ? formatCurrency(trans.credit) : '-'}</td>
                                                                 <td className="p-4 text-left font-black text-slate-900 tabular-nums">{formatCurrency(runningBalance + (idx === 1 ? -trans.credit : 0))}</td>
@@ -2996,17 +4550,26 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
                                                         );
                                                     });
                                                 })}
-                                                <tr className="bg-slate-100 font-black border-t-2 border-slate-400">
+                                                <tr className="bg-gradient-to-r from-slate-100 to-slate-50 font-black border-t-2 border-slate-400">
                                                     <td colSpan={2} className="p-4 text-right">المجموع</td>
-                                                    <td className="p-4 text-left text-red-600 tabular-nums">{formatCurrency(customerStatements.totalDebit)}</td>
-                                                    <td className="p-4 text-left text-emerald-600 tabular-nums">{formatCurrency(customerStatements.totalCredit)}</td>
-                                                    <td className="p-4 text-left text-amber-600 tabular-nums">{formatCurrency(customerStatements.balance)}</td>
+                                                    <td className="p-4 text-left text-red-600 tabular-nums">{formatCurrency(customerStatements.totalDue)}</td>
+                                                    <td className="p-4 text-left text-emerald-600 tabular-nums">{formatCurrency(customerStatements.totalPaid)}</td>
+                                                    <td className={`p-4 text-left tabular-nums ${
+                                                        customerStatements.remaining > 0 ? 'text-amber-600' : customerStatements.remaining < 0 ? 'text-slate-600' : 'text-emerald-600'
+                                                    }`}>{formatCurrency(customerStatements.remaining)}</td>
                                                 </tr>
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {!selectedCustomerForStatement && (
+                        <div className="professional-card p-12 text-center">
+                            <FileSpreadsheet className="mx-auto text-slate-300 mb-4" size={64} />
+                            <p className="text-slate-400 font-bold text-lg">ابحث عن عميل لعرض كشف حسابه</p>
                         </div>
                     )}
                 </div>
@@ -3054,12 +4617,12 @@ const AccountingView: React.FC<AccountingViewProps> = ({ orders, customers, invo
                                                 <header class="border-b-4 border-emerald-900 pb-6 mb-8">
                                                     <div class="flex justify-between items-start">
                                                         <div class="flex items-center gap-6">
-                                                            <div class="w-20 h-20 bg-emerald-600 rounded-2xl flex items-center justify-center">
+                                                            ${companyLogo ? `<img src="${companyLogo}" alt="شعار الشركة" style="width: 80px; height: 80px; object-fit: contain; border-radius: 16px;" />` : `<div class="w-20 h-20 bg-emerald-600 rounded-2xl flex items-center justify-center">
                                                                 <svg viewBox="0 0 24 24" fill="none" class="text-white" style="width: 40px; height: 40px;">
                                                                     <path d="M9 4H13C16.3137 4 19 6.68629 19 10V14C19 17.3137 16.3137 20 13 20H9V4Z" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
                                                                     <path d="M9 4V20" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
                                                                 </svg>
-                                                            </div>
+                                                            </div>`}
                                                             <div>
                                                                 <h1 class="text-4xl font-black text-slate-900 mb-1">مصنع ديكورا</h1>
                                                                 <p class="text-slate-600 font-bold text-base">للأثاث والمطابخ والديكور</p>
@@ -3131,9 +4694,11 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentReceipts, setPaymentReceipts] = useState<PaymentReceipt[]>([]);
   
   const [backupInterval, setBackupInterval] = useState(10);
   const [productsConfig, setProductsConfig] = useState<Record<string, ProductConfig>>(DEFAULT_PRODUCTS_CONFIG);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(null);
 
   const [backupHandle, setBackupHandle] = useState<any>(null);
   const backupHandleRef = useRef<any>(null);
@@ -3168,11 +4733,11 @@ const App: React.FC = () => {
     }, 5000);
   };
 
-  const dataRef = useRef({ customers, orders, expenses, invoices, userAccounts, productsConfig, backupInterval });
+  const dataRef = useRef({ customers, orders, expenses, invoices, paymentReceipts, userAccounts, productsConfig, backupInterval, companyLogo });
 
   // Auto-save (debounced) when critical app data changes
   useEffect(() => {
-    dataRef.current = { customers, orders, expenses, invoices, userAccounts, productsConfig, backupInterval };
+    dataRef.current = { customers, orders, expenses, invoices, paymentReceipts, userAccounts, productsConfig, backupInterval, companyLogo };
     const payload = dataRef.current;
     const handle = setTimeout(() => {
       // fire-and-forget
@@ -3181,7 +4746,7 @@ const App: React.FC = () => {
       }).catch(() => {});
     }, 800);
     return () => clearTimeout(handle);
-  }, [customers, orders, expenses, invoices, userAccounts, productsConfig, backupInterval]);
+  }, [customers, orders, expenses, invoices, paymentReceipts, userAccounts, productsConfig, backupInterval, companyLogo]);
 
   // Load saved state on startup (if any)
   useEffect(() => {
@@ -3194,9 +4759,11 @@ const App: React.FC = () => {
           if (s.orders) setOrders(s.orders);
           if (s.expenses) setExpenses(s.expenses);
           if (s.invoices) setInvoices(s.invoices);
+          if (s.paymentReceipts) setPaymentReceipts(s.paymentReceipts);
           if (s.userAccounts) setUserAccounts(s.userAccounts);
           if (s.productsConfig) setProductsConfig(s.productsConfig);
           if (s.backupInterval) setBackupInterval(s.backupInterval);
+          if (s.companyLogo) setCompanyLogo(s.companyLogo);
         }
       } catch (e) {
         console.debug('no saved state');
@@ -3495,14 +5062,17 @@ const App: React.FC = () => {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800;900&display=swap" rel="stylesheet">
         <style>
+          * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
           body { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; margin: 2rem; color: #111827; }
           .container { max-width: 1200px; margin: auto; background: white; padding: 2rem; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
           .header { text-align: center; border-bottom: 4px solid #f97316; padding-bottom: 1rem; margin-bottom: 2rem; }
-          .header h1 { font-size: 2.5rem; font-weight: 900; color: #0f172a; margin: 0; }
-          .header p { font-size: 1rem; color: #6b7280; margin-top: 0.5rem; }
-          table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
-          th, td { padding: 1rem; border-bottom: 1px solid #e5e7eb; }
+          .header h1 { font-size: 2.5rem; font-weight: 900; color: #0f172a; margin: 0; word-break: keep-all; white-space: normal; }
+          .header p { font-size: 1rem; color: #6b7280; margin-top: 0.5rem; word-break: keep-all; }
+          table { width: 100%; border-collapse: collapse; font-size: 0.95rem; table-layout: fixed; }
+          /* Use thicker borders to avoid "dashed" raster artifacts in PDF */
+          th, td { padding: 1rem; border-bottom: 2px solid #e5e7eb; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.6; }
           th { font-weight: 800; text-transform: uppercase; color: #4b5563; background-color: #f3f4f6; }
+          td { hyphens: auto; }
         </style>
       </head>
       <body>
@@ -3542,8 +5112,16 @@ const App: React.FC = () => {
         const opt = {
             margin: 0.5,
             filename: `Decora_Comprehensive_Production_Report_${new Date().toISOString().split('T')[0]}.pdf`,
-            image: { type: 'jpeg' as const, quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true },
+            // PNG + higher scale reduces "dashed" / dotted artifacts in text & 1px borders
+            image: { type: 'png' as const, quality: 1 },
+            html2canvas: { 
+                scale: 3, 
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+                allowTaint: false,
+                backgroundColor: '#ffffff'
+            },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' as const }
         };
 
@@ -3580,8 +5158,15 @@ const App: React.FC = () => {
         const opt = {
             margin: 0.5,
             filename: `Decora_Financial_Report_${new Date().toISOString().split('T')[0]}.pdf`,
-            image: { type: 'jpeg' as const, quality: 0.98 },
-            html2canvas: { scale: 2, useCORS: true },
+            image: { type: 'png' as const, quality: 1 },
+            html2canvas: { 
+                scale: 3, 
+                useCORS: true,
+                letterRendering: true,
+                logging: false,
+                allowTaint: false,
+                backgroundColor: '#ffffff'
+            },
             jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' as const }
         };
         html2pdf().from(element).set(opt).save().then(() => {
@@ -3621,19 +5206,21 @@ const App: React.FC = () => {
           <meta charset="UTF-8"><title>${title}</title>
           <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
           <style>
+            * { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
             body { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; color: #111827; }
             .page { padding: 2.5cm 2cm; }
             .header { text-align: center; border-bottom: 4px solid #f97316; padding-bottom: 1rem; margin-bottom: 2rem; }
-            .header h1 { font-size: 2.2rem; font-weight: 900; color: #0f172a; margin: 0; }
-            .header p { color: #6b7280; margin-top: 0.5rem; }
-            h2 { font-size: 1.5rem; font-weight: 900; color: #0f172a; margin-top: 2rem; margin-bottom: 1rem; border-right: 4px solid #f97316; padding-right: 0.75rem;}
-            table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-            th, td { padding: 0.75rem; border: 1px solid #e5e7eb; }
+            .header h1 { font-size: 2.2rem; font-weight: 900; color: #0f172a; margin: 0; word-break: keep-all; white-space: normal; }
+            .header p { color: #6b7280; margin-top: 0.5rem; word-break: keep-all; }
+            h2 { font-size: 1.5rem; font-weight: 900; color: #0f172a; margin-top: 2rem; margin-bottom: 1rem; border-right: 4px solid #f97316; padding-right: 0.75rem; word-break: keep-all; }
+            table { width: 100%; border-collapse: collapse; font-size: 0.9rem; table-layout: fixed; }
+            th, td { padding: 0.75rem; border: 2px solid #e5e7eb; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; white-space: normal; line-height: 1.6; }
             th { font-weight: 700; background-color: #f3f4f6; }
+            td { hyphens: auto; }
             .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
             .summary-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; text-align: center; }
-            .summary-card p { margin: 0; font-size: 0.8rem; font-weight: 700; color: #6b7280; }
-            .summary-card span { font-size: 1.75rem; font-weight: 900; color: #111827; }
+            .summary-card p { margin: 0; font-size: 0.8rem; font-weight: 700; color: #6b7280; word-break: keep-all; }
+            .summary-card span { font-size: 1.75rem; font-weight: 900; color: #111827; word-break: keep-all; }
             .status-paid { color: #059669; font-weight: 700; }
             .status-due { color: #2563eb; font-weight: 700; }
             .status-overdue { color: #dc2626; font-weight: 700; }
@@ -3707,6 +5294,7 @@ const App: React.FC = () => {
       ord: localStorage.getItem('decora_orders'),
       exp: localStorage.getItem('decora_expenses'),
       inv: localStorage.getItem('decora_invoices'),
+      receipts: localStorage.getItem('decora_payment_receipts'),
       users: localStorage.getItem('decora_users'),
       logged: localStorage.getItem('decora_logged_user'),
       prodConfig: localStorage.getItem('decora_products_config')
@@ -3744,6 +5332,7 @@ const App: React.FC = () => {
     
     if (saved.exp) setExpenses(JSON.parse(saved.exp) as Expense[]);
     if (saved.inv) setInvoices(JSON.parse(saved.inv) as Invoice[]);
+    if (saved.receipts) setPaymentReceipts(JSON.parse(saved.receipts) as PaymentReceipt[]);
 
     let loadedConfig: Record<string, ProductConfig> = saved.prodConfig ? JSON.parse(saved.prodConfig) as Record<string, ProductConfig> : DEFAULT_PRODUCTS_CONFIG;
     Object.keys(loadedConfig).forEach(key => {
@@ -3786,18 +5375,20 @@ const App: React.FC = () => {
   }, [userAccounts, currentUser]);
 
   useEffect(() => {
-    dataRef.current = { customers, orders, expenses, invoices, userAccounts, productsConfig, backupInterval };
+    dataRef.current = { customers, orders, expenses, invoices, paymentReceipts, userAccounts, productsConfig, backupInterval, companyLogo };
     if (!isInitialMount.current) {
       writeLocal('decora_customers', JSON.stringify(customers));
       writeLocal('decora_orders', JSON.stringify(orders));
       writeLocal('decora_expenses', JSON.stringify(expenses));
       writeLocal('decora_invoices', JSON.stringify(invoices));
+      writeLocal('decora_payment_receipts', JSON.stringify(paymentReceipts));
       writeLocal('decora_users', JSON.stringify(userAccounts));
       writeLocal('decora_products_config', JSON.stringify(productsConfig));
+      if (companyLogo) writeLocal('decora_logo', companyLogo);
       if (currentUser) writeLocal('decora_logged_user', JSON.stringify(currentUser));
       else localStorage.removeItem('decora_logged_user');
     }
-  }, [customers, orders, expenses, invoices, userAccounts, currentUser, productsConfig, backupInterval]);
+  }, [customers, orders, expenses, invoices, paymentReceipts, userAccounts, currentUser, productsConfig, backupInterval]);
 
   // Auto-save latest JSON to selected folder (debounced) — trigger only on important data changes
   useEffect(() => {
@@ -4246,25 +5837,203 @@ const App: React.FC = () => {
     order: Order | null;
     customer: Customer | null;
     onClose: () => void;
-  }> = ({ isOpen, invoice, order, customer, onClose }) => {
+    companyLogo: string | null;
+    onLogoChange: (logo: string | null) => void;
+    addToast: (message: string, type: 'success' | 'error' | 'info') => void;
+  }> = ({ isOpen, invoice, order, customer, onClose, companyLogo, onLogoChange, addToast }) => {
       const invoiceRef = useRef<HTMLDivElement>(null);
       if (!isOpen || !invoice || !order || !customer) return null;
 
       const remainingBalance = (order.price || 0) - (order.paidAmount || 0);
 
-      const handlePrint = () => {
-          const element = invoiceRef.current;
-          if (element) {
-              const opt = {
-                  margin: 0.2,
-                  filename: `فاتورة-${invoice.invoiceNumber}-${customer.name.replace(/\s+/g, '-')}.pdf`,
-                  image: { type: 'jpeg' as const, quality: 0.98 },
-                  html2canvas: { scale: 2, useCORS: true },
-                  jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' as const }
-              };
-              html2pdf().from(element).set(opt).save();
-          }
-      };
+    const buildPrintableHtml = () => {
+        const element = invoiceRef.current;
+        if (!element) return '';
+        return `
+            <!DOCTYPE html>
+            <html dir="rtl" lang="ar">
+            <head>
+                <meta charset="UTF-8">
+                <title>فاتورة #${invoice.invoiceNumber}</title>
+                <link rel="preconnect" href="https://fonts.googleapis.com">
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                <link rel="preconnect" href="https://fonts.googleapis.com">
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+                <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+                <style>
+                    @font-face {
+                        font-family: 'Tajawal';
+                        font-style: normal;
+                        font-weight: 300 900;
+                        font-display: swap;
+                        src: url('https://fonts.gstatic.com/s/tajawal/v13/Iurf6YBj_oCad4k1l_6gLrZjiLlJ-G0.woff2') format('woff2');
+                        unicode-range: U+0600-06FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF, U+FE80-FEFC;
+                    }
+                    * { 
+                        margin: 0; 
+                        padding: 0; 
+                        box-sizing: border-box; 
+                        -webkit-font-smoothing: antialiased;
+                        -moz-osx-font-smoothing: grayscale;
+                        text-rendering: optimizeLegibility;
+                    }
+                    html, body { 
+                        font-family: 'Tajawal', 'Arial Unicode MS', 'DejaVu Sans', Arial, sans-serif !important; 
+                        direction: rtl;
+                        width: 100%;
+                        height: 100%;
+                    }
+                    body {
+                        background: #fff;
+                        font-smooth: always;
+                        text-rendering: optimizeLegibility;
+                        font-kerning: normal;
+                        font-variant-ligatures: common-ligatures;
+                    }
+                    #invoice-content, #invoice-content * {
+                        text-rendering: geometricPrecision !important;
+                        -webkit-font-smoothing: antialiased !important;
+                        -moz-osx-font-smoothing: grayscale !important;
+                        font-feature-settings: "liga" 1, "kern" 1, "calt" 1 !important;
+                        font-kerning: normal !important;
+                        font-variant-ligatures: common-ligatures !important;
+                        shape-rendering: geometricPrecision !important;
+                    }
+                    #invoice-content span, #invoice-content div, #invoice-content p, #invoice-content td, #invoice-content th {
+                        text-rendering: geometricPrecision !important;
+                        font-smooth: always !important;
+                        word-wrap: break-word !important;
+                        overflow-wrap: break-word !important;
+                        word-break: break-word !important;
+                        white-space: normal !important;
+                        line-height: 1.6 !important;
+                    }
+                    #invoice-content table {
+                        table-layout: fixed !important;
+                    }
+                    #invoice-content td, #invoice-content th {
+                        hyphens: auto !important;
+                    }
+                    #invoice-content {
+                        width: 100%;
+                        max-width: 190mm;
+                        margin: 0 auto;
+                        padding: 8mm !important;
+                        background: #fff;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: space-between;
+                        min-height: 277mm;
+                        max-height: 277mm;
+                        overflow: hidden;
+                    }
+                    table {
+                        width: 100% !important;
+                    }
+                    @page {
+                        size: A4 portrait;
+                        margin: 10mm;
+                    }
+                    @media print {
+                        html, body { 
+                            -webkit-print-color-adjust: exact !important; 
+                            print-color-adjust: exact !important;
+                            color-adjust: exact !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            width: 210mm !important;
+                            height: 297mm !important;
+                        }
+                        #invoice-content {
+                            max-width: 190mm !important;
+                            min-height: 277mm !important;
+                            max-height: 277mm !important;
+                            padding: 8mm !important;
+                            page-break-inside: avoid !important;
+                            display: flex !important;
+                            flex-direction: column !important;
+                            justify-content: space-between !important;
+                            overflow: hidden !important;
+                            font-family: 'Tajawal', 'Arial Unicode MS', 'DejaVu Sans', Arial, sans-serif !important;
+                        }
+                        #invoice-content * {
+                            font-family: 'Tajawal', 'Arial Unicode MS', 'DejaVu Sans', Arial, sans-serif !important;
+                            text-rendering: optimizeLegibility !important;
+                            -webkit-font-smoothing: antialiased !important;
+                            -moz-osx-font-smoothing: grayscale !important;
+                        }
+                        #invoice-content span, #invoice-content div, #invoice-content p, #invoice-content td, #invoice-content th {
+                            word-wrap: break-word !important;
+                            overflow-wrap: break-word !important;
+                            word-break: break-word !important;
+                            white-space: normal !important;
+                            line-height: 1.6 !important;
+                        }
+                        #invoice-content table {
+                            table-layout: fixed !important;
+                        }
+                        #invoice-content td, #invoice-content th {
+                            hyphens: auto !important;
+                        }
+                        /* Hide everything except invoice content */
+                        body > *:not(#invoice-content) {
+                            display: none !important;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                ${element.outerHTML}
+            </body>
+            </html>
+        `;
+    };
+
+    const handleExportPdf = () => {
+        const html = buildPrintableHtml();
+        if (!html) return;
+        
+        // Create a new window for printing
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            addToast('يرجى السماح بالنوافذ المنبثقة لتصدير PDF', 'error');
+            return;
+        }
+
+        printWindow.document.write(html);
+        printWindow.document.close();
+
+        // Wait for fonts and content to load completely
+        const printDocument = async () => {
+            try {
+                // Wait for document to be ready
+                if (printWindow.document.readyState !== 'complete') {
+                    await new Promise((resolve) => {
+                        printWindow.onload = resolve;
+                        setTimeout(resolve, 1000);
+                    });
+                }
+
+                // Wait for fonts to load
+                if (printWindow.document.fonts && printWindow.document.fonts.ready) {
+                    await printWindow.document.fonts.ready;
+                    await new Promise(res => setTimeout(res, 500));
+                } else {
+                    await new Promise(res => setTimeout(res, 1000));
+                }
+
+                // Trigger print dialog - user can save as PDF
+                printWindow.print();
+            } catch (error) {
+                console.error('Print error:', error);
+                addToast('حدث خطأ أثناء فتح نافذة الطباعة', 'error');
+            }
+        };
+
+        // Start printing after a short delay to ensure content is rendered
+        setTimeout(printDocument, 500);
+    };
 
       return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6 bg-slate-950/80 backdrop-blur-sm animate-in no-print">
@@ -4272,111 +6041,212 @@ const App: React.FC = () => {
                   <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-slate-50/70 rounded-t-3xl">
                       <h3 className="font-black text-lg text-slate-800">فاتورة #{invoice.invoiceNumber}</h3>
                       <div className='flex items-center gap-4'>
-                        <button onClick={handlePrint} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-black text-xs flex items-center gap-2"><Printer size={16}/> طباعة</button>
+                        <label className="bg-blue-600 text-white px-4 py-2 rounded-lg font-black text-xs flex items-center gap-2 cursor-pointer hover:bg-blue-700 transition-colors">
+                            <UploadCloud size={16}/> رفع شعار
+                            <input 
+                                type="file" 
+                                accept="image/*" 
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = (event) => {
+                                            onLogoChange(event.target?.result as string);
+                                        };
+                                        reader.readAsDataURL(file);
+                                    }
+                                }}
+                            />
+                        </label>
+                        {companyLogo && (
+                            <button 
+                                onClick={() => onLogoChange(null)} 
+                                className="bg-red-500 text-white px-3 py-2 rounded-lg font-black text-xs flex items-center gap-2 hover:bg-red-600 transition-colors"
+                            >
+                                <X size={14}/> إزالة الشعار
+                            </button>
+                        )}
+                        <button onClick={handleExportPdf} className="bg-slate-800 text-white px-4 py-2 rounded-lg font-black text-xs flex items-center gap-2 hover:bg-slate-900 transition-colors"><Printer size={16}/> تصدير PDF</button>
                         <button onClick={onClose}><X size={24} className="text-slate-500 hover:text-red-600"/></button>
                       </div>
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-8">
-                      <div ref={invoiceRef} id="invoice-content" className="bg-white p-12 font-sans">
-                          <header className="border-b-4 border-slate-900 pb-8 mb-8">
-                              <div className="flex justify-between items-start">
-                                  <div className="flex items-center gap-6">
-                                      <div className="w-20 h-20 bg-orange-600 rounded-2xl flex items-center justify-center shadow-lg">
-                                          <Logo size={40} rotation="rotate-0" />
-                                      </div>
-                                      <div>
-                                        <h1 className="text-4xl font-black text-slate-900 mb-1">مصنع ديكورا</h1>
-                                        <p className="text-slate-600 font-bold text-base">للأثاث والمطابخ والديكور</p>
-                                        <p className="text-xs text-slate-500 mt-1">بنغازي - السيدة عائشة</p>
-                                        <p className="text-xs text-slate-500 mt-1 tabular-nums">هاتف: 0917404790</p>
-                                      </div>
+                      <div
+                        ref={invoiceRef}
+                        id="invoice-content"
+                        dir="rtl"
+                        style={{
+                          fontFamily: "'Tajawal', 'Arial', sans-serif",
+                          background: '#fff',
+                          padding: '8mm',
+                          color: '#1a1a1a',
+                          direction: 'rtl',
+                          minHeight: '277mm',
+                          maxHeight: '277mm',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          maxWidth: '190mm',
+                          margin: '0 auto'
+                        }}
+                      >
+                        <div>
+                          {/* Header - Brand Name & Logo */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 15, marginBottom: 18 }}>
+                              {companyLogo ? (
+                                  <img src={companyLogo} alt="شعار الشركة" style={{ width: 65, height: 65, objectFit: 'contain' }} />
+                              ) : (
+                                  <div style={{ width: 65, height: 65, borderRadius: '50%', background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      <span style={{ color: '#fff', fontSize: 26, fontWeight: 900 }}>D</span>
                                   </div>
-                                  <div className="text-left border-r-4 border-orange-600 pr-6">
-                                    <p className="text-slate-600 font-bold text-lg">رقم الفاتورة: <span className="text-orange-600 font-black">{invoice.invoiceNumber}</span></p>
-                                    <p className="text-xs text-slate-500 mt-2">تاريخ الإصدار: {new Date(invoice.issueDate).toLocaleDateString('ar-LY')}</p>
-                                  </div>
+                              )}
+                              <div>
+                                  <div style={{ fontSize: 22, fontWeight: 900, color: '#1a1a1a', letterSpacing: 1 }}>مصنع ديكورا</div>
+                                  <div style={{ fontSize: 11, color: '#666', fontWeight: 600 }}>للأثاث والمطابخ والديكور</div>
+                                  <div style={{ fontSize: 10, color: '#444', fontWeight: 600, marginTop: 2 }}>بنغازي - السيدة عائشة</div>
+                                  <div style={{ fontSize: 10, color: '#444', fontWeight: 700, marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>هاتف: 0917404790</div>
                               </div>
-                          </header>
+                          </div>
 
-                          <section className="grid grid-cols-2 gap-12 my-10">
-                              <div className="bg-slate-50 p-6 rounded-xl border-2 border-slate-200">
-                                  <h3 className="font-black text-slate-700 text-base uppercase mb-4 border-b-2 border-slate-300 pb-2">فاتورة إلى:</h3>
-                                  <p className="font-black text-xl text-slate-900 mb-2">{customer?.name}</p>
-                                  <p className="text-sm text-slate-700 font-bold mb-1">{customer.address}</p>
-                                  <p className="text-sm text-slate-700 font-bold tabular-nums">{customer.phone}</p>
+                          {/* Invoice Title */}
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 18 }}>
+                              <span style={{ fontWeight: 900, color: '#1a1a1a', letterSpacing: 2, fontSize: 22 }}>INVOICE</span>
+                              <span style={{ fontWeight: 900, color: '#d97706', letterSpacing: 1, fontSize: 32 }}>فاتورة</span>
+                          </div>
+
+                          {/* Invoice To & Invoice Details */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
+                              <div>
+                                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>Invoice To :</div>
+                                  <div style={{ fontSize: 16, color: '#1a1a1a', fontWeight: 700, marginBottom: 8 }}>فاتورة إلى:</div>
+                                  <div style={{ fontSize: 14, color: '#444', lineHeight: 1.8, maxWidth: 300 }}>
+                                      <div style={{ fontWeight: 700, fontSize: 20, marginBottom: 5 }}>{customer.name}</div>
+                                      <div>{customer.address}</div>
+                                      <div style={{ fontVariantNumeric: 'tabular-nums' }}>{customer.phone}</div>
+                                  </div>
                               </div>
-                              <div className="bg-slate-50 p-6 rounded-xl border-2 border-slate-200">
-                                <h3 className="font-black text-slate-700 text-base uppercase mb-4 border-b-2 border-slate-300 pb-2">معلومات الفاتورة:</h3>
-                                <div className='grid grid-cols-2 gap-4'>
-                                  <div>
-                                      <p className="text-xs font-bold text-slate-500 mb-1">تاريخ الاستحقاق</p>
-                                      <p className="font-black text-slate-900">{new Date(invoice.dueDate).toLocaleDateString('ar-LY')}</p>
+                              <div style={{ textAlign: 'left' }}>
+                                  <div style={{ marginBottom: 15 }}>
+                                      <div style={{ fontWeight: 700, fontSize: 13 }}>Invoice No :</div>
+                                      <div style={{ fontSize: 16, color: '#1a1a1a', fontWeight: 700 }}>رقم الفاتورة :</div>
+                                      <div style={{ fontWeight: 800, fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>{invoice.invoiceNumber.toString().padStart(6, '0')}</div>
                                   </div>
                                   <div>
-                                      <p className="text-xs font-bold text-slate-500 mb-1">رقم المشروع</p>
-                                      <p className="font-black text-slate-900 tabular-nums">{order.id.substring(0,8)}</p>
+                                      <div style={{ fontWeight: 700, fontSize: 13 }}>Date</div>
+                                      <div style={{ fontSize: 16, color: '#1a1a1a', fontWeight: 700 }}>تاريخ</div>
+                                      <div style={{ fontWeight: 600, fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{new Date(invoice.issueDate).toLocaleDateString('ar-LY')}</div>
                                   </div>
-                                </div>
                               </div>
-                          </section>
-                          
-                          <section className="mb-10">
-                            <div className="border-2 border-slate-300 rounded-xl overflow-hidden shadow-lg">
-                                <table className="w-full text-right">
-                                    <thead className="bg-slate-900">
-                                        <tr>
-                                            <th className="p-5 font-black text-white text-base">الوصف</th>
-                                            <th className="p-5 font-black text-white text-base text-center w-32">الكمية</th>
-                                            <th className="p-5 font-black text-white text-base text-left">المبلغ</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {invoice.items.map((item, i) => (
-                                          <tr key={i} className={`border-t-2 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50'} border-slate-200`}>
-                                              <td className="p-5 font-bold text-lg text-slate-900 align-top">{item.description}</td>
-                                              <td className="p-5 font-bold text-center text-slate-700 align-top">1</td>
-                                              <td className="p-5 font-black text-lg text-slate-900 text-left align-top tabular-nums">{formatCurrency(item.amount)}</td>
+                          </div>
+
+                          {/* Items Table */}
+                          <div style={{ marginBottom: 15 }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                                  <thead>
+                                      <tr style={{ borderBottom: '2px solid #1a1a1a' }}>
+                                          <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 700, width: '8%' }}>
+                                              <div style={{ fontSize: 12 }}>No</div>
+                                              <div style={{ fontSize: 14, color: '#1a1a1a', fontWeight: 700 }}>رقم</div>
+                                          </th>
+                                          <th style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 700, width: '42%' }}>
+                                              <div style={{ fontSize: 12 }}>Item Description</div>
+                                              <div style={{ fontSize: 14, color: '#1a1a1a', fontWeight: 700 }}>وصف السلعة</div>
+                                          </th>
+                                          <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 700, width: '15%' }}>
+                                              <div style={{ fontSize: 12 }}>Price</div>
+                                              <div style={{ fontSize: 14, color: '#1a1a1a', fontWeight: 700 }}>السعر</div>
+                                          </th>
+                                          <th style={{ padding: '12px 8px', textAlign: 'center', fontWeight: 700, width: '10%' }}>
+                                              <div style={{ fontSize: 12 }}>Qty</div>
+                                              <div style={{ fontSize: 14, color: '#1a1a1a', fontWeight: 700 }}>كمية</div>
+                                          </th>
+                                          <th style={{ padding: '12px 8px', textAlign: 'left', fontWeight: 700, width: '20%' }}>
+                                              <div style={{ color: '#d97706', fontSize: 12 }}>Total</div>
+                                              <div style={{ fontSize: 14, color: '#d97706', fontWeight: 700 }}>المجموع</div>
+                                          </th>
+                                      </tr>
+                                  </thead>
+                                  <tbody>
+                                      {invoice.items.map((item, i) => (
+                                          <tr key={i} style={{ borderBottom: '1px solid #e5e5e5' }}>
+                                              <td style={{ padding: '14px 8px', textAlign: 'center', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                                                  {(i + 1).toString().padStart(2, '0')}
+                                              </td>
+                                              <td style={{ padding: '14px 8px', textAlign: 'right', fontWeight: 600, fontSize: 16 }}>
+                                                  {item.description}
+                                              </td>
+                                              <td style={{ padding: '14px 8px', textAlign: 'center', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                                                  {formatCurrency(item.amount)}
+                                              </td>
+                                              <td style={{ padding: '14px 8px', textAlign: 'center', fontVariantNumeric: 'tabular-nums', fontSize: 14 }}>
+                                                  01
+                                              </td>
+                                              <td style={{ padding: '14px 8px', textAlign: 'left', fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: 15 }}>
+                                                  {formatCurrency(item.amount)}
+                                              </td>
                                           </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                          </section>
-                          
-                           <section className='grid grid-cols-2 gap-8 mb-8'>
-                               <div className="bg-amber-50 p-6 rounded-xl border-2 border-amber-200">
-                                  <h3 className="font-black text-slate-800 text-base uppercase mb-3 border-b-2 border-amber-300 pb-2">ملاحظات</h3>
-                                  <p className="text-sm text-slate-700 font-bold leading-relaxed">شكراً لتعاملكم معنا. يرجى سداد قيمة الفاتورة قبل تاريخ الاستحقاق.</p>
-                                  <p className="text-xs text-slate-600 font-bold mt-3">في حالة وجود أي استفسار، يرجى التواصل معنا.</p>
-                               </div>
-                                <div className='bg-gradient-to-br from-slate-50 to-slate-100 p-6 rounded-xl border-2 border-slate-300 space-y-4'>
-                                    <div className='flex justify-between items-center pb-3 border-b-2 border-slate-300'>
-                                        <p className='font-bold text-slate-700 text-base'>الإجمالي:</p>
-                                        <p className='font-black text-lg tabular-nums text-slate-900'>{formatCurrency(invoice.totalAmount)}</p>
-                                    </div>
-                                    <div className='flex justify-between items-center pb-3 border-b-2 border-slate-300'>
-                                        <p className='font-bold text-slate-700 text-base'>المدفوع:</p>
-                                        <p className='font-black text-lg text-emerald-600 tabular-nums'>{formatCurrency(order.paidAmount || 0)}</p>
-                                    </div>
-                                    <div className='flex justify-between items-center pt-2'>
-                                        <p className='font-black text-xl text-slate-900'>المتبقي:</p>
-                                        <p className='font-black text-2xl text-red-600 tabular-nums'>{formatCurrency(remainingBalance)}</p>
-                                    </div>
-                                </div>
-                            </section>
-                          
-                          <footer className="border-t-4 border-slate-900 pt-8 mt-8">
-                              <div className="grid grid-cols-2 gap-8 text-center">
-                                  <div>
-                                      <p className="font-black text-slate-900 text-sm mb-2">مصنع ديكورا</p>
-                                      <p className="text-xs text-slate-600">بنغازي - السيدة عائشة</p>
-                                  </div>
-                                  <div>
-                                      <p className="font-black text-slate-900 text-sm mb-2">للأثاث والمطابخ والديكور</p>
-                                      <p className="text-xs text-slate-600 tabular-nums">هاتف: 0917404790</p>
+                                      ))}
+                                  </tbody>
+                              </table>
+                          </div>
+
+                          {/* Summary Box - Below Table */}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 15 }}>
+                              <div style={{ minWidth: 300 }}>
+                                  <div style={{ border: '2px solid #1a1a1a' }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #e5e5e5' }}>
+                                          <div>
+                                              <div style={{ fontSize: 11, color: '#666' }}>Sub Total</div>
+                                              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>المجموع الفرعي</div>
+                                          </div>
+                                          <div style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', fontSize: 16, alignSelf: 'center' }}>{formatCurrency(invoice.totalAmount)}</div>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #e5e5e5' }}>
+                                          <div>
+                                              <div style={{ fontSize: 11, color: '#666' }}>Paid</div>
+                                              <div style={{ fontSize: 14, fontWeight: 700, color: '#059669' }}>المدفوع</div>
+                                          </div>
+                                          <div style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: '#059669', fontSize: 16, alignSelf: 'center' }}>{formatCurrency(order.paidAmount || 0)}</div>
+                                      </div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fef3c7' }}>
+                                          <div>
+                                              <div style={{ fontSize: 11, color: '#92400e' }}>Net Total</div>
+                                              <div style={{ fontSize: 16, fontWeight: 900, color: '#d97706' }}>صافي الإجمالي</div>
+                                          </div>
+                                          <div style={{ fontWeight: 900, fontVariantNumeric: 'tabular-nums', color: '#d97706', fontSize: 18, alignSelf: 'center' }}>{formatCurrency(remainingBalance)}</div>
+                                      </div>
                                   </div>
                               </div>
-                          </footer>
+                          </div>
+
+                          {/* Gray Bars */}
+                          <div style={{ marginBottom: 15 }}>
+                              <div style={{ height: 18, background: '#d1d5db', marginBottom: 5 }}></div>
+                              <div style={{ height: 18, background: '#d1d5db' }}></div>
+                          </div>
+                        </div>
+
+                        {/* Bottom Section - Payment Info & Footer */}
+                        <div>
+                          {/* Payment Info */}
+                          <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 1 }}>Payment Info :</div>
+                              <div style={{ fontSize: 14, color: '#1a1a1a', fontWeight: 700, marginBottom: 6 }}>معلومات الدفع</div>
+                              <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6 }}>
+                                  <div><span style={{ fontSize: 10 }}>Account |</span> <span style={{ fontWeight: 700, fontSize: 13 }}>رقم الحساب :</span> <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 700 }}>081014518280017</span></div>
+                                  <div><span style={{ fontSize: 10 }}>A/C Name |</span> <span style={{ fontWeight: 700, fontSize: 13 }}>إسم الحساب :</span> <span style={{ fontWeight: 700 }}>منير علي مانع</span></div>
+                                  <div><span style={{ fontSize: 10 }}>Bank |</span> <span style={{ fontWeight: 700, fontSize: 13 }}>المصرف :</span> <span style={{ fontWeight: 700 }}>مصرف الوحدة</span></div>
+                              </div>
+                          </div>
+
+                          {/* Footer */}
+                          <div style={{ background: '#1a1a1a', padding: '10px 16px', textAlign: 'center' }}>
+                              <div style={{ color: '#fff', fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>بنغازي - السيدة عائشة</div>
+                              <div style={{ color: '#d97706', fontWeight: 700, fontSize: 14, marginTop: 3, fontVariantNumeric: 'tabular-nums' }}>0917404790</div>
+                          </div>
+                        </div>
                       </div>
                   </div>
               </div>
@@ -4609,6 +6479,9 @@ const App: React.FC = () => {
         order={orders.find(o => o.id === modals.invoice.invoice?.orderId) || null}
         customer={customers.find(c => c.id === modals.invoice.invoice?.customerId) || null}
         onClose={() => setModals(m => ({ ...m, invoice: {isOpen: false, invoice: null}}))}
+        companyLogo={companyLogo}
+        onLogoChange={setCompanyLogo}
+        addToast={addToast}
       />
       <WhatsAppTemplatesModal
         isOpen={modals.whatsappTemplates.isOpen}
@@ -4648,7 +6521,15 @@ const App: React.FC = () => {
         <header className="bg-white border-b border-slate-200 px-8 flex items-center justify-between no-print z-40 shadow-sm flex-shrink-0">
             <div className="flex items-center gap-8">
                 <div className="flex items-center gap-4">
-                    <Logo size={28} />
+                    {companyLogo ? (
+                        <img 
+                            src={companyLogo} 
+                            alt="شعار ديكورا" 
+                            className="w-10 h-10 object-contain rounded-xl"
+                        />
+                    ) : (
+                        <Logo size={28} />
+                    )}
                     <h1 className="text-2xl font-black tracking-tighter">ديكورا</h1>
                 </div>
                 <div className="h-8 w-px bg-slate-200 hidden lg:block"></div>
@@ -4703,12 +6584,12 @@ const App: React.FC = () => {
             {activeTab === 'production' && <ProductionView orders={orders} customers={customers} setOrders={setOrders} onDelete={currentUser.role === 'admin' ? handleOpenOrderDeleteConfirm : undefined} openEdit={o => { setModals({...modals, editOrder:{isOpen:true, order:o}}); setEditedOrder(o); }} config={productsConfig} getDaysDiff={getDaysDiff} openReschedule={openRescheduleModal} />}
             {activeTab === 'customers' && <CustomersView customers={customers} orders={orders} onAdd={handleAddCustomer} onEdit={c => setModals(m => ({ ...m, editCustomer: { isOpen: true, customer: c } }))} onDelete={handleOpenCustomerDeleteConfirm} onWhatsApp={handleOpenWhatsAppModal} initialFormOpen={false} />}
             {activeTab === 'orders' && <NewOrderView customers={customers} orders={orders} invoices={invoices} onAdd={handleAddOrder} config={productsConfig} getSuggestedDeliveryDate={getSuggestedDeliveryDate} addToast={addToast} />}
-            {activeTab === 'accounting' && <AccountingView orders={orders} customers={customers} invoices={invoices} setInvoices={setInvoices} expenses={expenses} setExpenses={setExpenses} setOrders={setOrders} addToast={addToast} openInvoice={openInvoiceModal} handlePrintFinancialReport={() => setModals(m=>({...m, financialReport: {...m.financialReport, isOpen:true}}))} productsConfig={productsConfig} />}
+            {activeTab === 'accounting' && <AccountingView orders={orders} customers={customers} invoices={invoices} setInvoices={setInvoices} expenses={expenses} setExpenses={setExpenses} setOrders={setOrders} paymentReceipts={paymentReceipts} setPaymentReceipts={setPaymentReceipts} addToast={addToast} openInvoice={openInvoiceModal} handlePrintFinancialReport={() => setModals(m=>({...m, financialReport: {...m.financialReport, isOpen:true}}))} productsConfig={productsConfig} companyLogo={companyLogo} />}
             {activeTab === 'reports' && <ReportsView orders={orders} customers={customers} getDaysDiff={getDaysDiff} handleExportReport={handleExportReport} handleExportComprehensiveReport={handleExportComprehensiveReport} productsConfig={productsConfig} />}
             {activeTab === 'archive' && <ArchiveView orders={orders} customers={customers} />}
             {activeTab === 'calendar' && <CalendarView orders={orders} customers={customers} productsConfig={productsConfig} onOrderClick={openRescheduleModal} onDateDrop={handleDropOnCalendar} />}
             {currentUser.role === 'admin' && activeTab === 'database' && (
-              <DatabaseView customers={customers} orders={orders} expenses={expenses} invoices={invoices} setCustomers={setCustomers} setOrders={setOrders} setExpenses={setExpenses} setInvoices={setInvoices} userAccounts={userAccounts} setUserAccounts={setUserAccounts} fileInputRef={fileInputRef} currentUser={currentUser} openPasswordModal={openPasswordModal} onAddUser={handleAddUserAccount} onToggleUserStatus={handleToggleUserStatus} onDeleteUser={handleDeleteUser} onChangeUserRole={handleChangeUserRole} handleManualExport={handleManualExport} backupInterval={backupInterval} setBackupInterval={setBackupInterval} onSelectBackupPath={selectBackupFolder} isBackupPathSet={!!backupHandle} autoBackupEnabled={autoBackupEnabled} setAutoBackupEnabled={setAutoBackupEnabled} setProductsConfig={setProductsConfig} addToast={addToast} />
+              <DatabaseView customers={customers} orders={orders} expenses={expenses} invoices={invoices} setCustomers={setCustomers} setOrders={setOrders} setExpenses={setExpenses} setInvoices={setInvoices} userAccounts={userAccounts} setUserAccounts={setUserAccounts} fileInputRef={fileInputRef} currentUser={currentUser} openPasswordModal={openPasswordModal} onAddUser={handleAddUserAccount} onToggleUserStatus={handleToggleUserStatus} onDeleteUser={handleDeleteUser} onChangeUserRole={handleChangeUserRole} handleManualExport={handleManualExport} backupInterval={backupInterval} setBackupInterval={setBackupInterval} onSelectBackupPath={selectBackupFolder} isBackupPathSet={!!backupHandle} autoBackupEnabled={autoBackupEnabled} setAutoBackupEnabled={setAutoBackupEnabled} setProductsConfig={setProductsConfig} addToast={addToast} companyLogo={companyLogo} setCompanyLogo={setCompanyLogo} />
             )}
             {currentUser.role === 'admin' && activeTab === 'products' && (
                <ProductsView config={productsConfig} onEdit={handleEditProduct} onAdd={handleAddProduct} />
